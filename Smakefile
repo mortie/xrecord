@@ -1,0 +1,2 @@
+PROJNAME = xrecord
+PKGS = x11 xext libavcodec libavutil
