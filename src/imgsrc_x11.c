@@ -35,10 +35,12 @@ static struct imgbuf get_frame_x11(struct imgsrc_x11 *src) {
 	};
 }
 
-struct imgsrc *imgsrc_create_x11(char *rectstr) {
+struct imgsrc *imgsrc_create_x11(struct rect rect) {
 	struct imgsrc_x11 *src = malloc(sizeof(*src));
 	src->imgsrc.free = (void (*)(struct imgsrc *))free_x11;
 	src->imgsrc.get_frame = (struct imgbuf (*)(struct imgsrc *))get_frame_x11;
+
+	memcpy(&src->imgsrc.rect, &rect, sizeof(rect));
 
 	src->display = XOpenDisplay(NULL);
 	assume(src->display != NULL);
@@ -47,8 +49,6 @@ struct imgsrc *imgsrc_create_x11(char *rectstr) {
 
 	XWindowAttributes gwa;
 	XGetWindowAttributes(src->display, src->root, &gwa);
-
-	rect_parse(&src->imgsrc.rect, (struct rect) { 0, 0, gwa.width, gwa.height }, rectstr);
 
 	// Create shm image
 	XShmSegmentInfo shminfo;

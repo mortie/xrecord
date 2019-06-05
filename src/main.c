@@ -10,14 +10,13 @@
 #include "venc.h"
 
 int main(int argc, char **argv) {
-
 	const AVCodec *codec;
 	AVCodecContext *ctx;
 	struct enc_conf conf = {
 		.id = AV_CODEC_ID_H264,
 		.fps = 30,
-		.width = 3860,
-		.height = 2160,
+		.width = 1920,
+		.height = 1080,
 	};
 
 	if (find_encoder(&codec, &ctx, NULL, &conf) < 0) {
@@ -36,7 +35,8 @@ int main(int argc, char **argv) {
 		encfmt = ctx->pix_fmt;
 	}
 
-	struct imgsrc *src = imgsrc_create_x11(NULL);
+	// Create image source
+	struct imgsrc *src = imgsrc_create_x11((struct rect) { 0, 0, conf.width, conf.height });
 
 	// The easiest way to get the source pixel format is to
 	// just get an image first
@@ -91,15 +91,12 @@ int main(int argc, char **argv) {
 	FILE *out = fopen("output.h264", "w");
 
 	while (true) {
-		printf("convert frame...\n");
 		av_frame_make_writable(frame);
 		sws_scale(swsctx,
 				(const uint8_t * const[]) { buf.data }, (int[]) { buf.bpl }, 0, src->rect.h,
 				frame->data, frame->linesize);
-		printf("done.\n");
 
 		// Decide what frame to use
-		printf("encode frame...\n");
 		AVFrame *f;
 		if (hwframe) {
 			f = hwframe;
@@ -130,14 +127,13 @@ int main(int argc, char **argv) {
 			fwrite(pkt->data, 1, pkt->size, out);
 			av_packet_unref(pkt);
 		}
-		printf("done.\n");
+
+		printf("Encoded frame.\n");
 
 		frame->pts += 1;
 
 		// Get the next round's fram
-		printf("get frame...\n");
 		buf = src->get_frame(src);
-		printf("done.\n");
 	}
 
 	src->free(src);

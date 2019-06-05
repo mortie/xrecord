@@ -26,6 +26,6 @@ struct imgsrc {
 };
 
 // Allocate imgsrcs.
-extern struct imgsrc *imgsrc_create_x11(char *rectstr);
+extern struct imgsrc *imgsrc_create_x11(struct rect rect);
 
 #endif
