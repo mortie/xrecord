@@ -1,6 +1,7 @@
 #include "imgsrc.h"
 
 #include <stdlib.h>
+#include <string.h>
 #include <X11/Xlib.h>
 #include <X11/extensions/XShm.h>
 #include <sys/shm.h>
@@ -19,16 +20,25 @@ static void free_x11(struct imgsrc_x11 *src) {
 	free(src);
 }
 
-static void get_frame_x11(struct imgsrc_x11 *src, uint8_t *data) {
-	XShmGetImage(
+static struct imgbuf get_frame_x11(struct imgsrc_x11 *src) {
+	if (!XShmGetImage(
 			src->display, src->root, src->image,
-			src->imgsrc.rect.x, src->imgsrc.rect.y, AllPlanes);
+			src->imgsrc.rect.x, src->imgsrc.rect.y, AllPlanes)) {
+		fprintf(stderr, "XShmGetImage :(\n");
+		exit(EXIT_FAILURE);
+	}
+
+	return (struct imgbuf) {
+		.fmt = AV_PIX_FMT_BGRA,
+		.data = src->image->data,
+		.bpl = src->image->bytes_per_line,
+	};
 }
 
 struct imgsrc *imgsrc_create_x11(char *rectstr) {
 	struct imgsrc_x11 *src = malloc(sizeof(*src));
-	src->imgsrc.free = (void (*)(void *))free_x11;
-	src->imgsrc.get_frame = (void (*)(void *, uint8_t *))get_frame_x11;
+	src->imgsrc.free = (void (*)(struct imgsrc *))free_x11;
+	src->imgsrc.get_frame = (struct imgbuf (*)(struct imgsrc *))get_frame_x11;
 
 	src->display = XOpenDisplay(NULL);
 	assume(src->display != NULL);
@@ -44,15 +54,32 @@ struct imgsrc *imgsrc_create_x11(char *rectstr) {
 	XShmSegmentInfo shminfo;
 	src->image = XShmCreateImage(
 			src->display, DefaultVisual(src->display, DefaultScreen(src->display)),
-			24, ZPixmap, NULL, &shminfo, src->imgsrc.rect.w, src->imgsrc.rect.h);
+			32, ZPixmap, NULL, &shminfo, src->imgsrc.rect.w, src->imgsrc.rect.h);
+	if (src->image == NULL) {
+		fprintf(stderr, "XShmCreateImage :(\n");
+		exit(EXIT_FAILURE);
+	}
 
 	// Attach shm image
-	shminfo.shmid = shmget(IPC_PRIVATE,
+	int ret = shminfo.shmid = shmget(IPC_PRIVATE,
 			src->image->bytes_per_line * src->image->height,
 			IPC_CREAT|0777);
+	if (ret < 0) {
+		perror("shmget");
+		exit(EXIT_FAILURE);
+	}
+
 	shminfo.shmaddr = src->image->data = shmat(shminfo.shmid, 0, 0);
+	if (shminfo.shmaddr == (void *)-1) {
+		perror("shmat");
+		exit(EXIT_FAILURE);
+	}
+
 	shminfo.readOnly = False;
-	XShmAttach(src->display, &shminfo);
+	if (!XShmAttach(src->display, &shminfo)) {
+		fprintf(stderr, "XShmAttach :(\n");
+		exit(EXIT_FAILURE);
+	}
 
 	return (struct imgsrc *)src;
 }

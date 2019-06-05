@@ -1,2 +1,2 @@
 PROJNAME = xrecord
-PKGS = x11 xext libavcodec libavutil
+PKGS = x11 xext libavcodec libavutil libswscale

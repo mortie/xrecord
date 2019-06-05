@@ -49,7 +49,7 @@ static int try_vaapi(
 		return -1;
 
 	*ctx = avcodec_alloc_context3(*codec);
-	setconf(*ctx, (*codec)->pix_fmts[0], conf);
+	setconf(*ctx, AV_PIX_FMT_VAAPI, conf);
 
 	// Create hardware device
 	static AVBufferRef *hw_device_ctx = NULL;
