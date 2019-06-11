@@ -16,39 +16,8 @@ struct imgsrc_x11 {
 	XImage *image;
 };
 
-static void free_x11(struct imgsrc_x11 *src) {
-	free(src);
-}
-
-static struct imgbuf get_frame_x11(struct imgsrc_x11 *src) {
-	if (!XShmGetImage(
-			src->display, src->root, src->image,
-			src->imgsrc.rect.x, src->imgsrc.rect.y, AllPlanes)) {
-		fprintf(stderr, "XShmGetImage :(\n");
-		exit(EXIT_FAILURE);
-	}
-
-	return (struct imgbuf) {
-		.fmt = AV_PIX_FMT_BGRA,
-		.data = src->image->data,
-		.bpl = src->image->bytes_per_line,
-	};
-}
-
-struct imgsrc *imgsrc_create_x11(struct rect rect) {
-	struct imgsrc_x11 *src = malloc(sizeof(*src));
-	src->imgsrc.free = (void (*)(struct imgsrc *))free_x11;
-	src->imgsrc.get_frame = (struct imgbuf (*)(struct imgsrc *))get_frame_x11;
-
-	memcpy(&src->imgsrc.rect, &rect, sizeof(rect));
-
-	src->display = XOpenDisplay(NULL);
-	assume(src->display != NULL);
-
-	src->root = XDefaultRootWindow(src->display);
-
-	XWindowAttributes gwa;
-	XGetWindowAttributes(src->display, src->root, &gwa);
+static void init_x11(struct imgsrc_x11 *src, struct rect rect) {
+	memcpy(&src->imgsrc.rect, &rect, sizeof(src->imgsrc.rect));
 
 	// Create shm image
 	XShmSegmentInfo shminfo;
@@ -80,6 +49,46 @@ struct imgsrc *imgsrc_create_x11(struct rect rect) {
 		fprintf(stderr, "XShmAttach :(\n");
 		exit(EXIT_FAILURE);
 	}
+}
+
+static void free_x11(struct imgsrc_x11 *src) {
+	free(src);
+}
+
+static struct imgbuf get_frame_x11(struct imgsrc_x11 *src) {
+	if (!XShmGetImage(
+			src->display, src->root, src->image,
+			src->imgsrc.rect.x, src->imgsrc.rect.y, AllPlanes)) {
+		fprintf(stderr, "XShmGetImage :(\n");
+		exit(EXIT_FAILURE);
+	}
+
+	fprintf(stderr, "got frame from x\n");
+
+	return (struct imgbuf) {
+		.data = src->image->data,
+		.bpl = src->image->bytes_per_line,
+	};
+}
+
+struct imgsrc *imgsrc_create_x11() {
+	struct imgsrc_x11 *src = malloc(sizeof(*src));
+	src->imgsrc.init = (void (*)(struct imgsrc *, struct rect))init_x11;
+	src->imgsrc.free = (void (*)(struct imgsrc *))free_x11;
+	src->imgsrc.get_frame = (struct imgbuf (*)(struct imgsrc *))get_frame_x11;
+
+	src->display = XOpenDisplay(NULL);
+	assume(src->display != NULL);
+
+	src->root = XDefaultRootWindow(src->display);
+
+	// Get screen size
+	XWindowAttributes gwa;
+	XGetWindowAttributes(src->display, src->root, &gwa);
+	src->imgsrc.screensize.w = gwa.width;
+	src->imgsrc.screensize.h = gwa.height;
+
+	src->imgsrc.pixfmt = AV_PIX_FMT_BGRA;
 
 	return (struct imgsrc *)src;
 }

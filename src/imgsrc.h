@@ -7,12 +7,14 @@
 #include <libavcodec/avcodec.h>
 
 struct imgbuf {
-	enum AVPixelFormat fmt;
 	void *data;
 	int bpl;
 };
 
 struct imgsrc {
+	// Prepare video capture
+	void (*init)(struct imgsrc *src, struct rect rect);
+
 	// Free all memory allocated by imgsrc_create_*.
 	void (*free)(struct imgsrc *src);
 
@@ -22,10 +24,15 @@ struct imgsrc {
 	// re-used between calls.
 	struct imgbuf (*get_frame)(struct imgsrc *src);
 
+	// Variables initialized on creation (i.e before init)
+	struct rect screensize;
+	enum AVPixelFormat pixfmt;
+
+	// Initialized in init
 	struct rect rect;
 };
 
 // Allocate imgsrcs.
-extern struct imgsrc *imgsrc_create_x11(struct rect rect);
+extern struct imgsrc *imgsrc_create_x11();
 
 #endif

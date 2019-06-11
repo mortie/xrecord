@@ -1,2 +1,11 @@
 PROJNAME = xrecord
-PKGS = x11 xext libavcodec libavutil libswscale
+PKGS = x11 xext libavcodec libavutil libswscale OpenCL
+
+OBJS += $(BUILD)/obj/assets.c.o
+
+$(BUILD)/assets.c: $(wildcard assets/*)
+	rm -f $@
+	for f in assets/*; do xxd -C -i "$$f" >> $@; done
+
+$(BUILD)/obj/assets.c.o: $(BUILD)/assets.c
+	$(call runpfx,'(CC)',$(CC) -o $@ -c $< $(CLFAGS))

@@ -8,18 +8,42 @@
 #include "imgsrc.h"
 #include "rect.h"
 #include "venc.h"
+#include "pixconv.h"
+
+struct config {
+	struct rect inrect;
+	struct rect outrect;
+};
 
 int main(int argc, char **argv) {
-	const AVCodec *codec;
-	AVCodecContext *ctx;
-	struct enc_conf conf = {
-		.id = AV_CODEC_ID_H264,
-		.fps = 30,
-		.width = 1920,
-		.height = 1080,
+	struct config conf = {
+		.inrect = {
+			.x = 0,
+			.y = 0,
+			.w = 1920,
+			.h = 1080,
+		},
+		.outrect = {
+			.w = 1920,
+			.h = 1080,
+		},
 	};
 
-	if (find_encoder(&codec, &ctx, NULL, &conf) < 0) {
+	// Create image source
+	struct imgsrc *src = imgsrc_create_x11();
+
+	// TODO: make conf.inrect depend on src->screensize
+
+	const AVCodec *codec;
+	AVCodecContext *ctx;
+	struct enc_conf encconf = {
+		.id = AV_CODEC_ID_H264,
+		.fps = 30,
+		.width = conf.inrect.w,
+		.height = conf.inrect.h,
+	};
+
+	if (find_encoder(&codec, &ctx, NULL, &encconf) < 0) {
 		fprintf(stderr, "Failed to find video encoder.\n");
 		return EXIT_FAILURE;
 	}
@@ -35,23 +59,9 @@ int main(int argc, char **argv) {
 		encfmt = ctx->pix_fmt;
 	}
 
-	// Create image source
-	struct imgsrc *src = imgsrc_create_x11((struct rect) { 0, 0, conf.width, conf.height });
-
-	// The easiest way to get the source pixel format is to
-	// just get an image first
-	struct imgbuf buf = src->get_frame(src);
-	fprintf(stderr, "got image\n");
-
-	// Create the libswscale image scale/conversion context
-	struct SwsContext *swsctx = sws_getContext(
-			src->rect.w, src->rect.h, buf.fmt,
-			src->rect.w, src->rect.h, encfmt,
-			0, NULL, NULL, NULL);
-	if (swsctx == NULL) {
-		fprintf(stderr, "sws_getContxt :(\n");
-		return EXIT_FAILURE;
-	}
+	struct pixconv *conv = pixconv_create(
+			conf.inrect, src->pixfmt,
+			conf.outrect, encfmt);
 
 	// Create the frame we'll send to the encoder
 	AVFrame *frame = av_frame_alloc();
@@ -60,8 +70,8 @@ int main(int argc, char **argv) {
 		return EXIT_FAILURE;
 	}
 	frame->format = encfmt;
-	frame->width = src->rect.w;
-	frame->height = src->rect.h;
+	frame->width = conf.outrect.w;
+	frame->height = conf.outrect.h;
 	if (av_frame_get_buffer(frame, 32) < 0) {
 		fprintf(stderr, "av_frame_get_buffer :(\n");
 		return EXIT_FAILURE;
@@ -90,10 +100,14 @@ int main(int argc, char **argv) {
 
 	FILE *out = fopen("output.h264", "w");
 
+	src->init(src, conf.inrect);
 	while (true) {
+		// Get the next round's fram
+		struct imgbuf buf = src->get_frame(src);
+
 		av_frame_make_writable(frame);
-		sws_scale(swsctx,
-				(const uint8_t * const[]) { buf.data }, (int[]) { buf.bpl }, 0, src->rect.h,
+		pixconv_convert(conv,
+				(uint8_t const * const[]) { buf.data }, (const int[]) { buf.bpl },
 				frame->data, frame->linesize);
 
 		// Decide what frame to use
@@ -131,9 +145,6 @@ int main(int argc, char **argv) {
 		printf("Encoded frame.\n");
 
 		frame->pts += 1;
-
-		// Get the next round's fram
-		buf = src->get_frame(src);
 	}
 
 	src->free(src);
