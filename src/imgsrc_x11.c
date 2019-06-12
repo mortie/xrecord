@@ -24,31 +24,27 @@ static void init_x11(struct imgsrc_x11 *src, struct rect rect) {
 	src->image = XShmCreateImage(
 			src->display, DefaultVisual(src->display, DefaultScreen(src->display)),
 			32, ZPixmap, NULL, &src->shminfo, src->imgsrc.rect.w, src->imgsrc.rect.h);
-	if (src->image == NULL) {
-		fprintf(stderr, "XShmCreateImage :(\n");
-		exit(EXIT_FAILURE);
-	}
+	if (src->image == NULL)
+		panic("XShmCreateImage failed");
 
 	// Attach shm image
 	int ret = src->shminfo.shmid = shmget(IPC_PRIVATE,
 			src->image->bytes_per_line * src->image->height,
 			IPC_CREAT|0777);
 	if (ret < 0) {
-		perror("shmget");
+		logperror("shmget");
 		exit(EXIT_FAILURE);
 	}
 
 	src->shminfo.shmaddr = src->image->data = shmat(src->shminfo.shmid, 0, 0);
 	if (src->shminfo.shmaddr == (void *)-1) {
-		perror("shmat");
+		logperror("shmat");
 		exit(EXIT_FAILURE);
 	}
 
 	src->shminfo.readOnly = False;
-	if (!XShmAttach(src->display, &src->shminfo)) {
-		fprintf(stderr, "XShmAttach :(\n");
-		exit(EXIT_FAILURE);
-	}
+	if (!XShmAttach(src->display, &src->shminfo))
+		panic("XShmAttach failed");
 }
 
 static void free_x11(struct imgsrc_x11 *src) {
@@ -58,12 +54,10 @@ static void free_x11(struct imgsrc_x11 *src) {
 static struct imgbuf get_frame_x11(struct imgsrc_x11 *src) {
 	if (!XShmGetImage(
 			src->display, src->root, src->image,
-			src->imgsrc.rect.x, src->imgsrc.rect.y, AllPlanes)) {
-		fprintf(stderr, "XShmGetImage :(\n");
-		exit(EXIT_FAILURE);
-	}
+			src->imgsrc.rect.x, src->imgsrc.rect.y, AllPlanes))
+		panic("XShmGetImage failed");
 
-	fprintf(stderr, "got frame from x\n");
+	logln("Got frame from X");
 
 	return (struct imgbuf) {
 		.data = src->image->data,

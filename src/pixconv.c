@@ -8,14 +8,14 @@
 #include <CL/opencl.h>
 
 #include "assets.h"
+#include "clerr.h"
+#include "util.h"
 
 #define CHECKERR(err) do { \
-	if (err) { \
-		fprintf(stderr, "%s:%i: error %i\n", __FILE__, __LINE__, err); \
-		exit(1); \
-	} else { \
-		fprintf(stderr, "%s:%i: OK %i\n", __FILE__, __LINE__, err); \
-	} \
+	if (err < 0) \
+		panic("CL error: %s (%i)", clGetErrorString(err), err); \
+	else \
+		logln("CL OK %i", err); \
 } while (0)
 
 struct pixconv_cl {
