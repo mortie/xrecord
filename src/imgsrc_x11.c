@@ -14,23 +14,23 @@ struct imgsrc_x11 {
 	Display *display;
 	Window root;
 	XImage *image;
+	XShmSegmentInfo shminfo;
 };
 
 static void init_x11(struct imgsrc_x11 *src, struct rect rect) {
 	memcpy(&src->imgsrc.rect, &rect, sizeof(src->imgsrc.rect));
 
 	// Create shm image
-	XShmSegmentInfo shminfo;
 	src->image = XShmCreateImage(
 			src->display, DefaultVisual(src->display, DefaultScreen(src->display)),
-			32, ZPixmap, NULL, &shminfo, src->imgsrc.rect.w, src->imgsrc.rect.h);
+			32, ZPixmap, NULL, &src->shminfo, src->imgsrc.rect.w, src->imgsrc.rect.h);
 	if (src->image == NULL) {
 		fprintf(stderr, "XShmCreateImage :(\n");
 		exit(EXIT_FAILURE);
 	}
 
 	// Attach shm image
-	int ret = shminfo.shmid = shmget(IPC_PRIVATE,
+	int ret = src->shminfo.shmid = shmget(IPC_PRIVATE,
 			src->image->bytes_per_line * src->image->height,
 			IPC_CREAT|0777);
 	if (ret < 0) {
@@ -38,14 +38,14 @@ static void init_x11(struct imgsrc_x11 *src, struct rect rect) {
 		exit(EXIT_FAILURE);
 	}
 
-	shminfo.shmaddr = src->image->data = shmat(shminfo.shmid, 0, 0);
-	if (shminfo.shmaddr == (void *)-1) {
+	src->shminfo.shmaddr = src->image->data = shmat(src->shminfo.shmid, 0, 0);
+	if (src->shminfo.shmaddr == (void *)-1) {
 		perror("shmat");
 		exit(EXIT_FAILURE);
 	}
 
-	shminfo.readOnly = False;
-	if (!XShmAttach(src->display, &shminfo)) {
+	src->shminfo.readOnly = False;
+	if (!XShmAttach(src->display, &src->shminfo)) {
 		fprintf(stderr, "XShmAttach :(\n");
 		exit(EXIT_FAILURE);
 	}
