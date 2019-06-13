@@ -107,7 +107,7 @@ int main(int argc, char **argv) {
 
 		av_frame_make_writable(frame);
 		pixconv_convert(conv,
-				(uint8_t const * const[]) { buf.data }, (const int[]) { buf.bpl },
+				(uint8_t  *[]) { buf.data }, (const int[]) { buf.bpl },
 				frame->data, frame->linesize);
 
 		// Decide what frame to use
