@@ -57,8 +57,6 @@ static struct imgbuf get_frame_x11(struct imgsrc_x11 *src) {
 			src->imgsrc.rect.x, src->imgsrc.rect.y, AllPlanes))
 		panic("XShmGetImage failed");
 
-	logln("Got frame from X");
-
 	return (struct imgbuf) {
 		.data = src->image->data,
 		.bpl = src->image->bytes_per_line,

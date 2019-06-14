@@ -14,8 +14,6 @@
 #define CHECKERR(err) do { \
 	if (err < 0) \
 		panic("CL error: %s (%i)", clGetErrorString(err), err); \
-	else \
-		logln("CL OK %i", err); \
 } while (0)
 
 struct pixconv_cl {
@@ -23,6 +21,9 @@ struct pixconv_cl {
 	cl_program program;
 	cl_kernel kernel;
 	cl_context context;
+	cl_command_queue queue;
+	cl_device_id device;
+
 };
 
 static int is_rgb32_nv12(enum AVPixelFormat in, enum AVPixelFormat out) {
@@ -31,7 +32,7 @@ static int is_rgb32_nv12(enum AVPixelFormat in, enum AVPixelFormat out) {
 
 static void rgbdesc(enum AVPixelFormat fmt, int *r, int *g, int *b) {
 	if (fmt == AV_PIX_FMT_BGRA) {
-		*b = 0; *g = 1; *r = 2;
+		*b = 0; *g = 8; *r = 16;
 	} else {
 		fprintf(stderr, "Unsupported pixel format.\n");
 	}
@@ -44,17 +45,16 @@ struct pixconv *pixconv_create(
 
 	int err;
 	cl_uint num_devices;
-	cl_device_id device;
 	err = clGetDeviceIDs(
 			NULL, CL_DEVICE_TYPE_GPU, 1,
-			&device, &num_devices);
+			&cl->device, &num_devices);
 	CHECKERR(err);
 
-	cl->context = clCreateContext(0, 1, &device, NULL, NULL, &err);
+	cl->context = clCreateContext(0, 1, &cl->device, NULL, NULL, &err);
 	CHECKERR(err);
 
 	if (is_rgb32_nv12(infmt, outfmt)) {
-		cl_command_queue queue_gpu = clCreateCommandQueue(cl->context, device, 0, &err);
+		cl->queue = clCreateCommandQueue(cl->context, cl->device, 0, &err);
 		CHECKERR(err);
 
 		cl->program = clCreateProgramWithSource(
@@ -68,13 +68,13 @@ struct pixconv *pixconv_create(
 		if (err) {
 			size_t len;
 			err = clGetProgramBuildInfo(
-					cl->program, device, CL_PROGRAM_BUILD_LOG,
+					cl->program, cl->device, CL_PROGRAM_BUILD_LOG,
 					0, NULL, &len);
 			CHECKERR(err);
 
 			char *logstr = malloc(len);
 			err = clGetProgramBuildInfo(
-					cl->program, device, CL_PROGRAM_BUILD_LOG,
+					cl->program, cl->device, CL_PROGRAM_BUILD_LOG,
 					len, logstr, &len);
 			CHECKERR(err);
 
@@ -118,8 +118,7 @@ int pixconv_convert(
 		err = clSetKernelArg(cl->kernel, 2, sizeof(b), &b);
 		CHECKERR(err);
 
-		/* Set up input image */
-
+		// Set up input image
 		cl_image_format input_format = {
 			.image_channel_data_type = CL_UNSIGNED_INT32,
 			.image_channel_order = CL_R,
@@ -137,8 +136,7 @@ int pixconv_convert(
 		err = clSetKernelArg(cl->kernel, 3, sizeof(input_image), &input_image);
 		CHECKERR(err);
 
-		/* Set up output Y image */
-
+		// Set up output Y image
 		cl_image_format output_y_format = {
 			.image_channel_data_type = CL_UNSIGNED_INT8,
 			.image_channel_order = CL_R,
@@ -156,8 +154,7 @@ int pixconv_convert(
 		err = clSetKernelArg(cl->kernel, 4, sizeof(output_y_image), &output_y_image);
 		CHECKERR(err);
 
-		/* Set up output UV image */
-
+		// Set up output UV image
 		cl_image_format output_uv_format = {
 			.image_channel_data_type = CL_UNSIGNED_INT8,
 			.image_channel_order = CL_RG,
@@ -173,6 +170,30 @@ int pixconv_convert(
 				&output_uv_format, &output_uv_desc, out_planes[1], &err);
 		CHECKERR(err);
 		err = clSetKernelArg(cl->kernel, 5, sizeof(output_uv_image), &output_uv_image);
+		CHECKERR(err);
+
+		// Run kernel
+		CHECKERR(err);
+		err = clEnqueueNDRangeKernel(
+				cl->queue, cl->kernel, 1, NULL,
+				(const size_t[]) { conv->inrect.w, 0 }, NULL,
+				0, NULL, NULL);
+		CHECKERR(err);
+
+		err = clEnqueueReadImage(
+				cl->queue, output_y_image, CL_TRUE,
+				(const size_t[]) { 0, 0, 0 },
+				(const size_t[]) { conv->outrect.w, conv->outrect.h, 1 },
+				out_strides[0], 0, out_planes[0],
+				0, NULL, NULL);
+		CHECKERR(err);
+
+		err = clEnqueueReadImage(
+				cl->queue, output_uv_image, CL_TRUE,
+				(const size_t[]) { 0, 0, 0 },
+				(const size_t[]) { conv->outrect.w / 2, conv->outrect.h / 2, 1 },
+				out_strides[1], 0, out_planes[1],
+				0, NULL, NULL);
 		CHECKERR(err);
 
 		return 0;
