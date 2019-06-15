@@ -175,8 +175,8 @@ int pixconv_convert(
 		// Run kernel
 		CHECKERR(err);
 		err = clEnqueueNDRangeKernel(
-				cl->queue, cl->kernel, 1, NULL,
-				(const size_t[]) { conv->inrect.w, 0 }, NULL,
+				cl->queue, cl->kernel, 2, NULL,
+				(const size_t[]) { conv->inrect.w, conv->inrect.h, 0 }, NULL,
 				0, NULL, NULL);
 		CHECKERR(err);
 

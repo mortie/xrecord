@@ -5,10 +5,21 @@
 #include <libavcodec/avcodec.h>
 #include <libswscale/swscale.h>
 
-#include "imgsrc.h"
+#include "ringbuf.h"
 #include "rect.h"
-#include "venc.h"
+#include "util.h"
+#include "imgsrc.h"
 #include "pixconv.h"
+#include "venc.h"
+
+void cap_thread(struct ringbuf *outq) {
+}
+
+void conv_thread(struct ringbuf *inq, struct ringbuf *outq) {
+}
+
+void enc_thread(struct ringbuf *inq) {
+}
 
 struct config {
 	struct rect inrect;
@@ -16,23 +27,23 @@ struct config {
 };
 
 int main(int argc, char **argv) {
-	struct config conf = {
-		.inrect = {
-			.x = 0,
-			.y = 0,
-			.w = 1920,
-			.h = 1080,
-		},
-		.outrect = {
-			.w = 1920,
-			.h = 1080,
-		},
-	};
 
 	// Create image source
 	struct imgsrc *src = imgsrc_create_x11();
 
-	// TODO: make conf.inrect depend on src->screensize
+	// TODO: get this from argv
+	struct config conf = {
+		.inrect = {
+			.x = 0,
+			.y = 0,
+			.w = src->screensize.w,
+			.h = src->screensize.h,
+		},
+		.outrect = {
+			.w = src->screensize.w,
+			.h = src->screensize.h,
+		},
+	};
 
 	const AVCodec *codec;
 	AVCodecContext *ctx;
@@ -142,9 +153,9 @@ int main(int argc, char **argv) {
 			av_packet_unref(pkt);
 		}
 
-		printf("Encoded frame.\n");
-
 		frame->pts += 1;
+
+		logln("Done.");
 	}
 
 	src->free(src);
