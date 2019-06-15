@@ -23,7 +23,6 @@ void ringbuf_destroy(struct ringbuf *rb) {
 	free(rb);
 }
 
-
 void *ringbuf_write_start(struct ringbuf *rb) {
 	pthread_mutex_lock(&rb->mut);
 
