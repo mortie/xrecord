@@ -3,8 +3,8 @@
 PROJNAME = xrecord
 PROJTYPE = exe
 
-SRCS = src/clerr.c src/imgsrc_x11.c src/main.c src/pixconv.c src/rect.c src/venc.c
-HDRS = src/assets.h src/clerr.h src/imgsrc.h src/pixconv.h src/rect.h src/util.h src/venc.h
+SRCS = src/clerr.c src/imgsrc_x11.c src/main.c src/pixconv.c src/rect.c src/ringbuf.c src/venc.c
+HDRS = src/assets.h src/clerr.h src/imgsrc.h src/pixconv.h src/rect.h src/ringbuf.h src/util.h src/venc.h
 OBJS = $(patsubst src/%,$(BUILD)/obj/%.o,$(SRCS))
 DEPS = $(patsubst src/%,$(BUILD)/dep/%.d,$(SRCS))
 PUBLICHDRS =
@@ -21,6 +21,7 @@ SMAKEFILE ?= Smakefile
 DESTDIR ?=
 PREFIX ?= /usr/local
 PHONIES = dumpdeps dumppublicdeps dumpprojtype clean cleanall
+CONFIGS = release sanitize debug
 
 PKG_CONFIG ?= pkg-config
 AR ?= ar
@@ -41,6 +42,10 @@ runpfx = @echo $(1) $(2) && $(2)
 all: $(BUILD)/$(PROJNAME)
 
 -include $(SMAKEFILE)
+
+ifeq ($(filter $(CONFIGS),$(CONFIG)),)
+$(error Unknown config '$(CONFIG)'. Supported configs: $(CONFIGS))
+endif
 
 ifneq ($(PKGS),)
 CCOPTS += $(shell $(PKG_CONFIG) --cflags $(PKGS))
