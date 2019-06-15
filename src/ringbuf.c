@@ -23,15 +23,6 @@ void ringbuf_destroy(struct ringbuf *rb) {
 	free(rb);
 }
 
-void ringbuf_queue(struct ringbuf *rb, void *data) {
-	pthread_mutex_lock(&rb->mut);
-
-	// Wait for space to be available if necessary
-	while (rb->used == rb->nmemb)
-		pthread_cond_wait(&rb->cond_space, &rb->mut);
-
-	memcpy(rb->data + rb->size * rb->wi, data, rb->size);
-}
 
 void *ringbuf_write_start(struct ringbuf *rb) {
 	pthread_mutex_lock(&rb->mut);
