@@ -45,29 +45,28 @@ static void init_x11(struct imgsrc_x11 *src, struct rect rect) {
 	src->shminfo.readOnly = False;
 	if (!XShmAttach(src->display, &src->shminfo))
 		panic("XShmAttach failed");
+
+	src->imgsrc.bpl = src->image->bytes_per_line;
 }
 
 static void free_x11(struct imgsrc_x11 *src) {
 	free(src);
 }
 
-static struct imgbuf get_frame_x11(struct imgsrc_x11 *src) {
+static void *get_frame_x11(struct imgsrc_x11 *src) {
 	if (!XShmGetImage(
 			src->display, src->root, src->image,
 			src->imgsrc.rect.x, src->imgsrc.rect.y, AllPlanes))
 		panic("XShmGetImage failed");
 
-	return (struct imgbuf) {
-		.data = src->image->data,
-		.bpl = src->image->bytes_per_line,
-	};
+	return src->image->data;
 }
 
 struct imgsrc *imgsrc_create_x11() {
 	struct imgsrc_x11 *src = malloc(sizeof(*src));
 	src->imgsrc.init = (void (*)(struct imgsrc *, struct rect))init_x11;
 	src->imgsrc.free = (void (*)(struct imgsrc *))free_x11;
-	src->imgsrc.get_frame = (struct imgbuf (*)(struct imgsrc *))get_frame_x11;
+	src->imgsrc.get_frame = (void *(*)(struct imgsrc *))get_frame_x11;
 
 	src->display = XOpenDisplay(NULL);
 	assume(src->display != NULL);

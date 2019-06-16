@@ -25,6 +25,12 @@
 	exit(EXIT_FAILURE); \
 } while (0)
 
+#define ppanic(...) do { \
+	logfmt("*** PANIC: "); \
+	fprintf(stderr, __VA_ARGS__); \
+	fprintf(stderr, ": %s\n", strerror(errno)); \
+} while (0)
+
 #define assume(expr) do { \
 	if (!(expr)) { \
 		panic("Assumption failed: " #expr); \

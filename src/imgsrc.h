@@ -22,7 +22,7 @@ struct imgsrc {
 	// This will never be freed, but the buffer will never be referenced
 	// again the next time get_frame is called. The buffer should probably be
 	// re-used between calls.
-	struct imgbuf (*get_frame)(struct imgsrc *src);
+	void *(*get_frame)(struct imgsrc *src);
 
 	// Variables initialized on creation (i.e before init)
 	struct rect screensize;
@@ -30,6 +30,7 @@ struct imgsrc {
 
 	// Initialized in init
 	struct rect rect;
+	int bpl;
 };
 
 // Allocate imgsrcs.

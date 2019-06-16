@@ -2,7 +2,7 @@
 
 #include <libavutil/hwcontext.h>
 
-static void setconf(AVCodecContext *ctx, enum AVPixelFormat fmt, struct enc_conf *conf) {
+static void setconf(AVCodecContext *ctx, enum AVPixelFormat fmt, struct encconf *conf) {
 	ctx->time_base = (AVRational) { 1, conf->fps };
 	ctx->pix_fmt = fmt;
 	ctx->width = conf->width;
@@ -11,7 +11,7 @@ static void setconf(AVCodecContext *ctx, enum AVPixelFormat fmt, struct enc_conf
 
 static int set_hwframe_ctx(
 		AVCodecContext *ctx, AVBufferRef *hw_device_ctx,
-		enum AVPixelFormat fmt, struct enc_conf *conf) {
+		enum AVPixelFormat fmt, struct encconf *conf) {
 	AVBufferRef *hw_frames_ref;
 	AVHWFramesContext *frames_ctx = NULL;
 	int ret = 0;
@@ -42,7 +42,7 @@ static int set_hwframe_ctx(
 
 static int try_vaapi(
 		const AVCodec **codec, AVCodecContext **ctx,
-		struct enc_conf *conf) {
+		struct encconf *conf) {
 
 	*codec = avcodec_find_encoder_by_name("h264_vaapi");
 	if (*codec == NULL)
@@ -78,7 +78,7 @@ static int try_vaapi(
 
 int find_encoder(
 		const AVCodec **codec, AVCodecContext **ctx,
-		const char *name, struct enc_conf *conf) {
+		const char *name, struct encconf *conf) {
 
 	if (name != NULL) {
 		*codec = avcodec_find_encoder_by_name(name);

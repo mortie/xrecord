@@ -3,7 +3,7 @@
 
 #include <libavcodec/avcodec.h>
 
-struct enc_conf {
+struct encconf {
 	enum AVCodecID id;
 	int fps;
 	int width;
@@ -12,6 +12,6 @@ struct enc_conf {
 
 int find_encoder(
 		const AVCodec **codec, AVCodecContext **ctx,
-		const char *name, struct enc_conf *conf);
+		const char *name, struct encconf *conf);
 
 #endif

@@ -16,8 +16,10 @@ struct ringbuf {
 	unsigned char data[];
 };
 
-struct ringbuf *ringbuf_create(size_t size, size_t nmbemb);
+struct ringbuf *ringbuf_create(size_t size, size_t nmemb);
 void ringbuf_destroy(struct ringbuf *rb);
+
+void ringbuf_put(struct ringbuf *rb, int idx, void *data);
 
 void *ringbuf_write_start(struct ringbuf *rb);
 void ringbuf_write_end(struct ringbuf *rb);
