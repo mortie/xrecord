@@ -24,9 +24,11 @@ void ringbuf_destroy(struct ringbuf *rb) {
 }
 
 void ringbuf_put(struct ringbuf *rb, int idx, void *data) {
-	pthread_mutex_lock(&rb->mut);
 	memcpy(rb->data + rb->size * idx, data, rb->size);
-	pthread_mutex_unlock(&rb->mut);
+}
+
+void *ringbuf_gte(struct ringbuf *rb, int idx) {
+	return rb->data + rb->size * idx;
 }
 
 void *ringbuf_write_start(struct ringbuf *rb) {

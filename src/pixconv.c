@@ -25,7 +25,21 @@ struct pixconv_cl {
 	cl_context context;
 	cl_command_queue queue;
 	cl_device_id device;
+};
 
+struct pixconv_rgb32_nv12 {
+	struct pixconv_cl cl;
+	cl_mem input_image;
+	cl_mem output_y_image;
+	cl_mem output_uv_image;
+};
+
+struct pixconv_rgb32_yuv420 {
+	struct pixconv_cl cl;
+	cl_mem input_image;
+	cl_mem output_y_image;
+	cl_mem output_u_image;
+	cl_mem output_v_image;
 };
 
 static bool is_rgb32_nv12(enum AVPixelFormat in, enum AVPixelFormat out) {
@@ -44,11 +58,9 @@ static void rgbdesc(enum AVPixelFormat fmt, int *r, int *g, int *b) {
 	}
 }
 
-struct pixconv *pixconv_create(
-		struct rect inrect, enum AVPixelFormat infmt,
-		struct rect outrect, enum AVPixelFormat outfmt) {
-	struct pixconv_cl *cl = malloc(sizeof(*cl));
-
+static int setup_cl(
+		struct pixconv_cl *cl,
+		const char *code, size_t len, const char *kname) {
 	int err;
 	cl_uint num_devices;
 	err = clGetDeviceIDs(
@@ -59,70 +71,228 @@ struct pixconv *pixconv_create(
 	cl->context = clCreateContext(0, 1, &cl->device, NULL, NULL, &err);
 	CHECKERR(err);
 
+	cl->queue = clCreateCommandQueue(cl->context, cl->device, 0, &err);
+	CHECKERR(err);
+
+	cl->program = clCreateProgramWithSource(
+			cl->context, 1,
+			(const char *[]) { (char *)code },
+			(size_t[]) { len },
+			&err);
+	CHECKERR(err);
+
+	err = clBuildProgram(cl->program, 0, NULL, NULL, NULL, NULL);
+	if (err) {
+		size_t len;
+		err = clGetProgramBuildInfo(
+				cl->program, cl->device, CL_PROGRAM_BUILD_LOG,
+				0, NULL, &len);
+		CHECKERR(err);
+
+		char *logstr = malloc(len);
+		err = clGetProgramBuildInfo(
+				cl->program, cl->device, CL_PROGRAM_BUILD_LOG,
+				len, logstr, &len);
+		CHECKERR(err);
+
+		fprintf(stderr, "Failed to compile:\n%s", logstr);
+		free(logstr);
+		return -1;
+	}
+
+	cl->kernel = clCreateKernel(cl->program, kname, &err);
+	CHECKERR(err);
+
+	return 0;
+}
+
+struct pixconv *pixconv_create(
+		struct rect inrect, enum AVPixelFormat infmt,
+		struct rect outrect, enum AVPixelFormat outfmt) {
+	assume(
+			is_rgb32_nv12(infmt, outfmt) ||
+			is_rgb32_yuv420(infmt, outfmt));
+
+	struct pixconv_cl *cl;
+	int err;
 	if (is_rgb32_nv12(infmt, outfmt)) {
-		cl->queue = clCreateCommandQueue(cl->context, cl->device, 0, &err);
-		CHECKERR(err);
+		struct pixconv_rgb32_nv12 *rgb32_nv12 = malloc(sizeof(*rgb32_nv12));
+		cl = (struct pixconv_cl *)rgb32_nv12;
 
-		cl->program = clCreateProgramWithSource(
-				cl->context, 1,
-				(const char *[]) { (char *)ASSETS_CONVERT_RGB32_NV12_CL },
-				(size_t[]) { ASSETS_CONVERT_RGB32_NV12_CL_LEN },
-				&err);
-		CHECKERR(err);
+		int ret = setup_cl(cl,
+				(const char *)ASSETS_CONVERT_RGB32_NV12_CL,
+				ASSETS_CONVERT_RGB32_NV12_CL_LEN,
+				"convert_rgb32_nv12");
 
-		err = clBuildProgram(cl->program, 0, NULL, NULL, NULL, NULL);
-		if (err) {
-			size_t len;
-			err = clGetProgramBuildInfo(
-					cl->program, cl->device, CL_PROGRAM_BUILD_LOG,
-					0, NULL, &len);
-			CHECKERR(err);
-
-			char *logstr = malloc(len);
-			err = clGetProgramBuildInfo(
-					cl->program, cl->device, CL_PROGRAM_BUILD_LOG,
-					len, logstr, &len);
-			CHECKERR(err);
-
-			fprintf(stderr, "Failed to compile:\n%s", logstr);
+		if (ret < 0) {
+			logln("Creating kernel failed.");
+			free(cl);
+			return NULL;
 		}
 
-		cl->kernel = clCreateKernel(cl->program, "convert_rgb32_nv12", &err);
+		// Set up RGB positions
+		int r, g, b;
+		rgbdesc(infmt, &r, &g, &b);
+		err = clSetKernelArg(cl->kernel, 0, sizeof(r), &r);
 		CHECKERR(err);
+		err = clSetKernelArg(cl->kernel, 1, sizeof(g), &g);
+		CHECKERR(err);
+		err = clSetKernelArg(cl->kernel, 2, sizeof(b), &b);
+		CHECKERR(err);
+
+		// Set up input image
+		cl_image_format input_format = {
+			.image_channel_data_type = CL_UNSIGNED_INT32,
+			.image_channel_order = CL_R,
+		};
+		cl_image_desc input_desc = {
+			.image_type = CL_MEM_OBJECT_IMAGE2D,
+			.image_width = inrect.w,
+			.image_height = inrect.h,
+		};
+		rgb32_nv12->input_image = clCreateImage(
+				cl->context, CL_MEM_READ_ONLY | CL_MEM_HOST_WRITE_ONLY,
+				&input_format, &input_desc, NULL, &err);
+		CHECKERR(err);
+		err = clSetKernelArg(cl->kernel, 3,
+				sizeof(rgb32_nv12->input_image), &rgb32_nv12->input_image);
+		CHECKERR(err);
+
+		// Set up output Y image
+		cl_image_format output_y_format = {
+			.image_channel_data_type = CL_UNSIGNED_INT8,
+			.image_channel_order = CL_R,
+		};
+		cl_image_desc output_y_desc = {
+			.image_type = CL_MEM_OBJECT_IMAGE2D,
+			.image_width = outrect.w,
+			.image_height = outrect.h,
+		};
+		rgb32_nv12->output_y_image = clCreateImage(
+				cl->context, CL_MEM_WRITE_ONLY | CL_MEM_HOST_READ_ONLY,
+				&output_y_format, &output_y_desc, NULL, &err);
+		CHECKERR(err);
+		err = clSetKernelArg(cl->kernel, 4,
+				sizeof(rgb32_nv12->output_y_image), &rgb32_nv12->output_y_image);
+		CHECKERR(err);
+
+		// Set up output UV image
+		cl_image_format output_uv_format = {
+			.image_channel_data_type = CL_UNSIGNED_INT8,
+			.image_channel_order = CL_RG,
+		};
+		cl_image_desc output_uv_desc = {
+			.image_type = CL_MEM_OBJECT_IMAGE2D,
+			.image_width = outrect.w / 2,
+			.image_height = outrect.h / 2,
+		};
+		rgb32_nv12->output_uv_image = clCreateImage(
+				cl->context, CL_MEM_WRITE_ONLY | CL_MEM_HOST_READ_ONLY,
+				&output_uv_format, &output_uv_desc, NULL, &err);
+		CHECKERR(err);
+		err = clSetKernelArg(cl->kernel, 5,
+				sizeof(rgb32_nv12->output_uv_image), &rgb32_nv12->output_uv_image);
+		CHECKERR(err);
+
 	} else if (is_rgb32_yuv420(infmt, outfmt)) {
-		cl->queue = clCreateCommandQueue(cl->context, cl->device, 0, &err);
-		CHECKERR(err);
+		struct pixconv_rgb32_yuv420 *rgb32_yuv420 = malloc(sizeof(*rgb32_yuv420));
+		cl = (struct pixconv_cl *)rgb32_yuv420;
 
-		cl->program = clCreateProgramWithSource(
-				cl->context, 1,
-				(const char *[]) { (char *)ASSETS_CONVERT_RGB32_YUV420_CL },
-				(size_t[]) { ASSETS_CONVERT_RGB32_YUV420_CL_LEN },
-				&err);
-		CHECKERR(err);
+		int ret = setup_cl(cl,
+				(const char *)ASSETS_CONVERT_RGB32_YUV420_CL,
+				ASSETS_CONVERT_RGB32_YUV420_CL_LEN,
+				"convert_rgb32_yuv420");
 
-		err = clBuildProgram(cl->program, 0, NULL, NULL, NULL, NULL);
-		if (err) {
-			size_t len;
-			err = clGetProgramBuildInfo(
-					cl->program, cl->device, CL_PROGRAM_BUILD_LOG,
-					0, NULL, &len);
-			CHECKERR(err);
-
-			char *logstr = malloc(len);
-			err = clGetProgramBuildInfo(
-					cl->program, cl->device, CL_PROGRAM_BUILD_LOG,
-					len, logstr, &len);
-			CHECKERR(err);
-
-			fprintf(stderr, "Failed to compile:\n%s", logstr);
+		if (ret < 0) {
+			logln("Creating kernel failed.");
+			free(cl);
+			return NULL;
 		}
 
-		cl->kernel = clCreateKernel(cl->program, "convert_rgb32_yuv420", &err);
+		// Set up RGB positions
+		int r, g, b;
+		rgbdesc(infmt, &r, &g, &b);
+		err = clSetKernelArg(cl->kernel, 0, sizeof(r), &r);
 		CHECKERR(err);
+		err = clSetKernelArg(cl->kernel, 1, sizeof(g), &g);
+		CHECKERR(err);
+		err = clSetKernelArg(cl->kernel, 2, sizeof(b), &b);
+		CHECKERR(err);
+
+		// Set up input image
+		cl_image_format input_format = {
+			.image_channel_data_type = CL_UNSIGNED_INT32,
+			.image_channel_order = CL_R,
+		};
+		cl_image_desc input_desc = {
+			.image_type = CL_MEM_OBJECT_IMAGE2D,
+			.image_width = inrect.w,
+			.image_height = inrect.h,
+		};
+		rgb32_yuv420->input_image = clCreateImage(
+				cl->context, CL_MEM_READ_ONLY | CL_MEM_HOST_WRITE_ONLY,
+				&input_format, &input_desc, NULL, &err);
+		CHECKERR(err);
+		err = clSetKernelArg(cl->kernel, 3,
+				sizeof(rgb32_yuv420->input_image), &rgb32_yuv420->input_image);
+		CHECKERR(err);
+
+		// Set up output Y image
+		cl_image_format output_y_format = {
+			.image_channel_data_type = CL_UNSIGNED_INT8,
+			.image_channel_order = CL_R,
+		};
+		cl_image_desc output_y_desc = {
+			.image_type = CL_MEM_OBJECT_IMAGE2D,
+			.image_width = outrect.w,
+			.image_height = outrect.h,
+		};
+		rgb32_yuv420->output_y_image = clCreateImage(
+				cl->context, CL_MEM_WRITE_ONLY | CL_MEM_HOST_READ_ONLY,
+				&output_y_format, &output_y_desc, NULL, &err);
+		CHECKERR(err);
+		err = clSetKernelArg(cl->kernel, 4,
+				sizeof(rgb32_yuv420->output_y_image), &rgb32_yuv420->output_y_image);
+		CHECKERR(err);
+
+		// Set up output U image
+		cl_image_format output_u_format = {
+			.image_channel_data_type = CL_UNSIGNED_INT8,
+			.image_channel_order = CL_R,
+		};
+		cl_image_desc output_u_desc = {
+			.image_type = CL_MEM_OBJECT_IMAGE2D,
+			.image_width = outrect.w / 2,
+			.image_height = outrect.h / 2,
+		};
+		rgb32_yuv420->output_u_image = clCreateImage(
+				cl->context, CL_MEM_WRITE_ONLY | CL_MEM_HOST_READ_ONLY,
+				&output_u_format, &output_u_desc, NULL, &err);
+		CHECKERR(err);
+		err = clSetKernelArg(cl->kernel, 5,
+				sizeof(rgb32_yuv420->output_u_image), &rgb32_yuv420->output_u_image);
+		CHECKERR(err);
+
+		// Set up output V image
+		cl_image_format output_v_format = {
+			.image_channel_data_type = CL_UNSIGNED_INT8,
+			.image_channel_order = CL_R,
+		};
+		cl_image_desc output_v_desc = {
+			.image_type = CL_MEM_OBJECT_IMAGE2D,
+			.image_width = outrect.w / 2,
+			.image_height = outrect.h / 2,
+		};
+		rgb32_yuv420->output_v_image = clCreateImage(
+				cl->context, CL_MEM_WRITE_ONLY | CL_MEM_HOST_READ_ONLY,
+				&output_v_format, &output_v_desc, NULL, &err);
+		CHECKERR(err);
+		err = clSetKernelArg(cl->kernel, 6,
+				sizeof(rgb32_yuv420->output_v_image), &rgb32_yuv420->output_v_image);
+		CHECKERR(err);
+
 	} else {
-		panic("Unsupported pixel formats: %s, %s.",
-				av_get_pix_fmt_name(infmt),
-				av_get_pix_fmt_name(outfmt));
+		assume_unreached();
 	}
 
 	memcpy(&cl->conv.inrect, &inrect, sizeof(inrect));
@@ -139,78 +309,25 @@ void pixconv_free(struct pixconv *conv) {
 
 int pixconv_convert(
 		struct pixconv *conv,
-		uint8_t **in_planes, const int *in_strides,
-		uint8_t **out_planes, const int *out_strides) {
+		uint8_t **inplanes, const int *instrides,
+		uint8_t **outplanes, const int *outstrides) {
 	int err;
 
 	struct pixconv_cl *cl = (struct pixconv_cl *)conv;
 
 	if (is_rgb32_nv12(conv->infmt, conv->outfmt)) {
-		int r, g, b;
-		rgbdesc(conv->infmt, &r, &g, &b);
-		err = clSetKernelArg(cl->kernel, 0, sizeof(r), &r);
-		CHECKERR(err);
-		err = clSetKernelArg(cl->kernel, 1, sizeof(g), &g);
-		CHECKERR(err);
-		err = clSetKernelArg(cl->kernel, 2, sizeof(b), &b);
-		CHECKERR(err);
+		struct pixconv_rgb32_nv12 *rgb32_nv12 = (struct pixconv_rgb32_nv12 *)cl;
 
-		// Set up input image
-		cl_image_format input_format = {
-			.image_channel_data_type = CL_UNSIGNED_INT32,
-			.image_channel_order = CL_R,
-		};
-		cl_image_desc input_desc = {
-			.image_type = CL_MEM_OBJECT_IMAGE2D,
-			.image_width = conv->inrect.w,
-			.image_height = conv->inrect.h,
-			.image_row_pitch = in_strides[0],
-		};
-		cl_mem input_image = clCreateImage(
-				cl->context, CL_MEM_READ_ONLY | CL_MEM_USE_HOST_PTR,
-				&input_format, &input_desc, in_planes[0], &err);
-		CHECKERR(err);
-		err = clSetKernelArg(cl->kernel, 3, sizeof(input_image), &input_image);
-		CHECKERR(err);
-
-		// Set up output Y image
-		cl_image_format output_y_format = {
-			.image_channel_data_type = CL_UNSIGNED_INT8,
-			.image_channel_order = CL_R,
-		};
-		cl_image_desc output_y_desc = {
-			.image_type = CL_MEM_OBJECT_IMAGE2D,
-			.image_width = conv->outrect.w,
-			.image_height = conv->outrect.h,
-			.image_row_pitch = out_strides[0],
-		};
-		cl_mem output_y_image = clCreateImage(
-				cl->context, CL_MEM_WRITE_ONLY | CL_MEM_USE_HOST_PTR,
-				&output_y_format, &output_y_desc, out_planes[0], &err);
-		CHECKERR(err);
-		err = clSetKernelArg(cl->kernel, 4, sizeof(output_y_image), &output_y_image);
-		CHECKERR(err);
-
-		// Set up output UV image
-		cl_image_format output_uv_format = {
-			.image_channel_data_type = CL_UNSIGNED_INT8,
-			.image_channel_order = CL_RG,
-		};
-		cl_image_desc output_uv_desc = {
-			.image_type = CL_MEM_OBJECT_IMAGE2D,
-			.image_width = conv->outrect.w / 2,
-			.image_height = conv->outrect.h / 2,
-			.image_row_pitch = out_strides[1],
-		};
-		cl_mem output_uv_image = clCreateImage(
-				cl->context, CL_MEM_WRITE_ONLY | CL_MEM_USE_HOST_PTR,
-				&output_uv_format, &output_uv_desc, out_planes[1], &err);
-		CHECKERR(err);
-		err = clSetKernelArg(cl->kernel, 5, sizeof(output_uv_image), &output_uv_image);
+		// Write input
+		err = clEnqueueWriteImage (
+				cl->queue, rgb32_nv12->input_image, CL_TRUE,
+				(const size_t[]) { 0, 0, 0 },
+				(const size_t[]) { conv->inrect.w, conv->inrect.h, 1 },
+				instrides[0], 0, inplanes[0],
+				0, NULL, NULL);
 		CHECKERR(err);
 
 		// Run kernel
-		CHECKERR(err);
 		err = clEnqueueNDRangeKernel(
 				cl->queue, cl->kernel, 2, NULL,
 				(const size_t[]) { conv->inrect.w, conv->inrect.h, 0 }, NULL,
@@ -219,103 +336,33 @@ int pixconv_convert(
 
 		// Read Y
 		err = clEnqueueReadImage(
-				cl->queue, output_y_image, CL_TRUE,
+				cl->queue, rgb32_nv12->output_y_image, CL_TRUE,
 				(const size_t[]) { 0, 0, 0 },
 				(const size_t[]) { conv->outrect.w, conv->outrect.h, 1 },
-				out_strides[0], 0, out_planes[0],
+				outstrides[0], 0, outplanes[0],
 				0, NULL, NULL);
 		CHECKERR(err);
 
 		// Read UV
 		err = clEnqueueReadImage(
-				cl->queue, output_uv_image, CL_TRUE,
+				cl->queue, rgb32_nv12->output_uv_image, CL_TRUE,
 				(const size_t[]) { 0, 0, 0 },
 				(const size_t[]) { conv->outrect.w / 2, conv->outrect.h / 2, 1 },
-				out_strides[1], 0, out_planes[1],
+				outstrides[1], 0, outplanes[1],
 				0, NULL, NULL);
 		CHECKERR(err);
 
 		return 0;
 	} else if (is_rgb32_yuv420(conv->infmt, conv->outfmt)) {
-		int r, g, b;
-		rgbdesc(conv->infmt, &r, &g, &b);
-		err = clSetKernelArg(cl->kernel, 0, sizeof(r), &r);
-		CHECKERR(err);
-		err = clSetKernelArg(cl->kernel, 1, sizeof(g), &g);
-		CHECKERR(err);
-		err = clSetKernelArg(cl->kernel, 2, sizeof(b), &b);
-		CHECKERR(err);
+		struct pixconv_rgb32_yuv420 *rgb32_yuv420 = (struct pixconv_rgb32_yuv420 *)cl;
 
-		// Set up input image
-		cl_image_format input_format = {
-			.image_channel_data_type = CL_UNSIGNED_INT32,
-			.image_channel_order = CL_R,
-		};
-		cl_image_desc input_desc = {
-			.image_type = CL_MEM_OBJECT_IMAGE2D,
-			.image_width = conv->inrect.w,
-			.image_height = conv->inrect.h,
-			.image_row_pitch = in_strides[0],
-		};
-		cl_mem input_image = clCreateImage(
-				cl->context, CL_MEM_READ_ONLY | CL_MEM_USE_HOST_PTR,
-				&input_format, &input_desc, in_planes[0], &err);
-		CHECKERR(err);
-		err = clSetKernelArg(cl->kernel, 3, sizeof(input_image), &input_image);
-		CHECKERR(err);
-
-		// Set up output Y image
-		cl_image_format output_y_format = {
-			.image_channel_data_type = CL_UNSIGNED_INT8,
-			.image_channel_order = CL_R,
-		};
-		cl_image_desc output_y_desc = {
-			.image_type = CL_MEM_OBJECT_IMAGE2D,
-			.image_width = conv->outrect.w,
-			.image_height = conv->outrect.h,
-			.image_row_pitch = out_strides[0],
-		};
-		cl_mem output_y_image = clCreateImage(
-				cl->context, CL_MEM_WRITE_ONLY | CL_MEM_USE_HOST_PTR,
-				&output_y_format, &output_y_desc, out_planes[0], &err);
-		CHECKERR(err);
-		err = clSetKernelArg(cl->kernel, 4, sizeof(output_y_image), &output_y_image);
-		CHECKERR(err);
-
-		// Set up output U image
-		cl_image_format output_u_format = {
-			.image_channel_data_type = CL_UNSIGNED_INT8,
-			.image_channel_order = CL_R,
-		};
-		cl_image_desc output_u_desc = {
-			.image_type = CL_MEM_OBJECT_IMAGE2D,
-			.image_width = conv->outrect.w / 2,
-			.image_height = conv->outrect.h / 2,
-			.image_row_pitch = out_strides[1],
-		};
-		cl_mem output_u_image = clCreateImage(
-				cl->context, CL_MEM_WRITE_ONLY | CL_MEM_USE_HOST_PTR,
-				&output_u_format, &output_u_desc, out_planes[1], &err);
-		CHECKERR(err);
-		err = clSetKernelArg(cl->kernel, 5, sizeof(output_u_image), &output_u_image);
-		CHECKERR(err);
-
-		// Set up output V image
-		cl_image_format output_v_format = {
-			.image_channel_data_type = CL_UNSIGNED_INT8,
-			.image_channel_order = CL_R,
-		};
-		cl_image_desc output_v_desc = {
-			.image_type = CL_MEM_OBJECT_IMAGE2D,
-			.image_width = conv->outrect.w / 2,
-			.image_height = conv->outrect.h / 2,
-			.image_row_pitch = out_strides[1],
-		};
-		cl_mem output_v_image = clCreateImage(
-				cl->context, CL_MEM_WRITE_ONLY | CL_MEM_USE_HOST_PTR,
-				&output_v_format, &output_v_desc, out_planes[2], &err);
-		CHECKERR(err);
-		err = clSetKernelArg(cl->kernel, 6, sizeof(output_v_image), &output_v_image);
+		// Write input
+		err = clEnqueueWriteImage (
+				cl->queue, rgb32_yuv420->input_image, CL_TRUE,
+				(const size_t[]) { 0, 0, 0 },
+				(const size_t[]) { conv->inrect.w, conv->inrect.h, 1 },
+				instrides[0], 0, inplanes[0],
+				0, NULL, NULL);
 		CHECKERR(err);
 
 		// Run kernel
@@ -328,36 +375,33 @@ int pixconv_convert(
 
 		// Read Y
 		err = clEnqueueReadImage(
-				cl->queue, output_y_image, CL_TRUE,
+				cl->queue, rgb32_yuv420->output_y_image, CL_TRUE,
 				(const size_t[]) { 0, 0, 0 },
 				(const size_t[]) { conv->outrect.w, conv->outrect.h, 1 },
-				out_strides[0], 0, out_planes[0],
+				outstrides[0], 0, outplanes[0],
 				0, NULL, NULL);
 		CHECKERR(err);
 
 		// Read U
 		err = clEnqueueReadImage(
-				cl->queue, output_u_image, CL_TRUE,
+				cl->queue, rgb32_yuv420->output_u_image, CL_TRUE,
 				(const size_t[]) { 0, 0, 0 },
 				(const size_t[]) { conv->outrect.w / 2, conv->outrect.h / 2, 1 },
-				out_strides[1], 0, out_planes[1],
+				outstrides[1], 0, outplanes[1],
 				0, NULL, NULL);
 		CHECKERR(err);
 
 		// Read V
 		err = clEnqueueReadImage(
-				cl->queue, output_v_image, CL_TRUE,
+				cl->queue, rgb32_yuv420->output_v_image, CL_TRUE,
 				(const size_t[]) { 0, 0, 0 },
 				(const size_t[]) { conv->outrect.w / 2, conv->outrect.h / 2, 1 },
-				out_strides[2], 0, out_planes[2],
+				outstrides[2], 0, outplanes[2],
 				0, NULL, NULL);
 		CHECKERR(err);
 
 		return 0;
 	} else {
-		logln("Unsupported pixel formats: %s, %s",
-				av_get_pix_fmt_name(conv->infmt),
-				av_get_pix_fmt_name(conv->outfmt));
-		return -1;
+		assume_unreached();
 	}
 }

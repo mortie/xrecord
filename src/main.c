@@ -68,7 +68,7 @@ static void *conv_thread(void *arg) {
 	struct convctx *ctx = (struct convctx *)arg;
 
 	// Prepare avframes
-	for (int i = 0; i < ctx->inq->nmemb; ++i) {
+	for (int i = 0; i < ctx->outq->nmemb; ++i) {
 		AVFrame *f = av_frame_alloc();
 		f->format = ctx->conv->outfmt;
 		f->width = ctx->conv->outrect.w;
@@ -232,22 +232,24 @@ int main(int argc, char **argv) {
 	struct pixconv *conv = pixconv_create(
 			imgsrc->rect, imgsrc->pixfmt,
 			conf.outrect, encfmt);
+
 	struct convctx convctx = {
 		.conv = conv,
 		.bpl = imgsrc->bpl,
 		.inq = capctx.outq,
 		.outq = encctx.inq,
 	};
+
 	pthread_t conv_th;
 	pthread_create(&conv_th, NULL, conv_thread, &convctx);
 
 	while (1) {
+		sleep(3);
 		fprintf(stderr, "\n");
 		stats_print(&cap_stats, "Capture", stderr);
 		stats_print(&conv_stats, "Convert", stderr);
 		stats_print(&enc_stats, "Encode", stderr);
 		stats_print(&total_stats, "Total", stderr);
-		sleep(3);
 	}
 
 	pthread_join(cap_th, NULL);

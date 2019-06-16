@@ -20,7 +20,7 @@ void pixconv_free(struct pixconv *conv);
 
 int pixconv_convert(
 		struct pixconv *conv,
-		uint8_t **in_planes, const int *in_strides,
-		uint8_t **out_planes, const int *out_strides);
+		uint8_t **inplanes, const int *instrides,
+		uint8_t **outplanes, const int *outstrides);
 
 #endif

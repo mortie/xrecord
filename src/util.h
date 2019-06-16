@@ -22,7 +22,7 @@
 
 #define panic(...) do { \
 	logln("*** PANIC: " __VA_ARGS__); \
-	exit(EXIT_FAILURE); \
+	abort(); \
 } while (0)
 
 #define ppanic(...) do { \
@@ -37,5 +37,8 @@
 		abort(); \
 	} \
 } while (0)
+
+#define assume_unreached() \
+	panic("Unreachable code reached.")
 
 #endif
