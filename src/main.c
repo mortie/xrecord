@@ -127,10 +127,14 @@ static void *enc_thread(void *arg) {
 	if (!pkt)
 		panic("Failed to allocate AVPacket.");
 
+	int pts = 0;
+
 	while (1) {
 		stats_begin(&total_stats);
 		AVFrame **avf = ringbuf_read_start(ctx->inq);
 		stats_begin(&enc_stats);
+
+		(*avf)->pts = pts++;
 
 		AVFrame *f;
 		if (hwframe) {
@@ -156,8 +160,6 @@ static void *enc_thread(void *arg) {
 			fwrite(pkt->data, 1, pkt->size, ctx->file);
 			av_packet_unref(pkt);
 		}
-
-		(*avf)->pts += 1;
 
 		ringbuf_read_end(ctx->inq);
 		stats_end(&enc_stats);
