@@ -83,9 +83,11 @@ static void *conv_thread(void *arg) {
 		AVFrame **frame = ringbuf_write_start(ctx->outq);
 		stats_begin(&conv_stats);
 
-		pixconv_convert(ctx->conv,
+		int ret = pixconv_convert(ctx->conv,
 				(uint8_t  *[]) { data }, (const int[]) { ctx->bpl },
 				(*frame)->data, (*frame)->linesize);
+		if (ret < 0)
+			panic("Pixel conversion failed.");
 
 		ringbuf_write_end(ctx->outq);
 		ringbuf_read_end(ctx->inq);
