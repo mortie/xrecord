@@ -31,19 +31,25 @@ void stats_end(struct stats *stats) {
 }
 
 void stats_print(struct stats *stats, const char *name, FILE *f) {
+	char abuf[10];
+	timefmt(abuf, stats_get_avg(stats));
+
+	char lbuf[10];
+	timefmt(lbuf, stats_get_last(stats));
+
+	fprintf(f, "%s: Avg: %s, last: %s\n", name, abuf, lbuf);
+}
+
+double stats_get_last(struct stats *stats) {
+	int last = stats->timeidx == 0 ? stats->count - 1 : stats->timeidx - 1;
+	return stats->times[last];
+}
+
+double stats_get_avg(struct stats *stats) {
 	double acc = 0;
 	for (int i = 0; i < stats->count; ++i) {
 		acc += stats->times[i];
 	}
 
-	double avg = acc / stats->count;
-
-	char abuf[10];
-	timefmt(abuf, avg);
-
-	char lbuf[10];
-	int last = stats->timeidx == 0 ? stats->count - 1 : stats->timeidx;
-	timefmt(lbuf, stats->times[last]);
-
-	fprintf(f, "%s: Avg: %s, last: %s\n", name, abuf, lbuf);
+	return acc / stats->count;
 }

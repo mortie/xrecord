@@ -20,8 +20,12 @@ static struct config {
 	const char *outfile;
 } conf;
 
+static struct stats cap_wlock_stats;
 static struct stats cap_stats;
+static struct stats conv_rlock_stats;
+static struct stats conv_wlock_stats;
 static struct stats conv_stats;
+static struct stats enc_rlock_stats;
 static struct stats enc_stats;
 static struct stats total_stats;
 
@@ -38,7 +42,10 @@ static void *cap_thread(void *arg) {
 	struct capctx *ctx = (struct capctx *)arg;
 
 	while (1) {
+		stats_begin(&cap_wlock_stats);
 		char *data = ringbuf_write_start(ctx->outq);
+		stats_end(&cap_wlock_stats);
+
 		stats_begin(&cap_stats);
 
 		memcpy(
@@ -79,8 +86,14 @@ static void *conv_thread(void *arg) {
 	}
 
 	while (1) {
+		stats_begin(&conv_rlock_stats);
 		void *data = ringbuf_read_start(ctx->inq);
+		stats_end(&conv_rlock_stats);
+
+		stats_begin(&conv_wlock_stats);
 		AVFrame **frame = ringbuf_write_start(ctx->outq);
+		stats_end(&conv_wlock_stats);
+
 		stats_begin(&conv_stats);
 
 		int ret = pixconv_convert(ctx->conv,
@@ -131,7 +144,11 @@ static void *enc_thread(void *arg) {
 
 	while (1) {
 		stats_begin(&total_stats);
+
+		stats_begin(&enc_rlock_stats);
 		AVFrame **avf = ringbuf_read_start(ctx->inq);
+		stats_end(&enc_rlock_stats);
+
 		stats_begin(&enc_stats);
 
 		(*avf)->pts = pts++;
@@ -190,7 +207,7 @@ int main(int argc, char **argv) {
 	imgsrc->init(imgsrc, conf.inrect);
 	struct capctx capctx = {
 		.imgsrc = imgsrc,
-		.outq = ringbuf_create(imgsrc->bpl * imgsrc->rect.h * 4, 2),
+		.outq = ringbuf_create(imgsrc->bpl * imgsrc->rect.h * 4, 3),
 	};
 	pthread_t cap_th;
 	pthread_create(&cap_th, NULL, cap_thread, &capctx);
@@ -202,7 +219,7 @@ int main(int argc, char **argv) {
 	struct encctx encctx;
 	encctx.file = fopen(conf.outfile, "w");
 	if (encctx.file == NULL) ppanic("%s", conf.outfile);
-	encctx.inq = ringbuf_create(sizeof(AVFrame *), 2);
+	encctx.inq = ringbuf_create(sizeof(AVFrame *), 3);
 
 	struct encconf encconf = {
 		.id = AV_CODEC_ID_H264,
@@ -246,15 +263,15 @@ int main(int argc, char **argv) {
 	while (1) {
 		sleep(3);
 		fprintf(stderr, "\n");
-		stats_print(&cap_stats, "Capture", stderr);
-		stats_print(&conv_stats, "Convert", stderr);
-		stats_print(&enc_stats, "Encode", stderr);
-		stats_print(&total_stats, "Total", stderr);
+		stats_print(&cap_wlock_stats,  "Capture WLock", stderr);
+		stats_print(&cap_stats,        "Capture      ", stderr);
+		stats_print(&conv_rlock_stats, "Convert RLock", stderr);
+		stats_print(&conv_wlock_stats, "Convert WLock", stderr);
+		stats_print(&conv_stats,       "Convert      ", stderr);
+		stats_print(&enc_rlock_stats,  "Encode RLock ", stderr);
+		stats_print(&enc_stats,        "Encode       ", stderr);
+		stats_print(&total_stats,      "Total        ", stderr);
 	}
-
-	pthread_join(cap_th, NULL);
-	pthread_join(enc_th, NULL);
-	pthread_join(conv_th, NULL);
 
 	return EXIT_SUCCESS;
 }
