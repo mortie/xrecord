@@ -178,14 +178,21 @@ struct pixconv *pixconv_create(
 			return NULL;
 		}
 
+		float scale_x = (float)inrect.w / (float)outrect.w;
+		err = clSetKernelArg(cl->kernel, 0, sizeof(scale_x), &scale_x);
+		CHECKERR(err);
+		float scale_y = (float)inrect.h / (float)outrect.h;
+		err = clSetKernelArg(cl->kernel, 1, sizeof(scale_y), &scale_y);
+		CHECKERR(err);
+
 		// Set up RGB positions
 		int r, g, b;
 		rgbdesc(infmt, &r, &g, &b);
-		err = clSetKernelArg(cl->kernel, 0, sizeof(r), &r);
+		err = clSetKernelArg(cl->kernel, 2, sizeof(r), &r);
 		CHECKERR(err);
-		err = clSetKernelArg(cl->kernel, 1, sizeof(g), &g);
+		err = clSetKernelArg(cl->kernel, 3, sizeof(g), &g);
 		CHECKERR(err);
-		err = clSetKernelArg(cl->kernel, 2, sizeof(b), &b);
+		err = clSetKernelArg(cl->kernel, 4, sizeof(b), &b);
 		CHECKERR(err);
 
 		// Set up input image
@@ -202,7 +209,7 @@ struct pixconv *pixconv_create(
 				cl->context, CL_MEM_READ_ONLY | CL_MEM_HOST_WRITE_ONLY,
 				&input_format, &input_desc, NULL, &err);
 		CHECKERR(err);
-		err = clSetKernelArg(cl->kernel, 3,
+		err = clSetKernelArg(cl->kernel, 5,
 				sizeof(rgb32_nv12->input_image), &rgb32_nv12->input_image);
 		CHECKERR(err);
 
@@ -220,7 +227,7 @@ struct pixconv *pixconv_create(
 				cl->context, CL_MEM_WRITE_ONLY | CL_MEM_HOST_READ_ONLY,
 				&output_y_format, &output_y_desc, NULL, &err);
 		CHECKERR(err);
-		err = clSetKernelArg(cl->kernel, 4,
+		err = clSetKernelArg(cl->kernel, 6,
 				sizeof(rgb32_nv12->output_y_image), &rgb32_nv12->output_y_image);
 		CHECKERR(err);
 
@@ -238,7 +245,7 @@ struct pixconv *pixconv_create(
 				cl->context, CL_MEM_WRITE_ONLY | CL_MEM_HOST_READ_ONLY,
 				&output_uv_format, &output_uv_desc, NULL, &err);
 		CHECKERR(err);
-		err = clSetKernelArg(cl->kernel, 5,
+		err = clSetKernelArg(cl->kernel, 7,
 				sizeof(rgb32_nv12->output_uv_image), &rgb32_nv12->output_uv_image);
 		CHECKERR(err);
 
@@ -263,11 +270,11 @@ struct pixconv *pixconv_create(
 		// Set up RGB positions
 		int r, g, b;
 		rgbdesc(infmt, &r, &g, &b);
-		err = clSetKernelArg(cl->kernel, 0, sizeof(r), &r);
+		err = clSetKernelArg(cl->kernel, 2, sizeof(r), &r);
 		CHECKERR(err);
-		err = clSetKernelArg(cl->kernel, 1, sizeof(g), &g);
+		err = clSetKernelArg(cl->kernel, 3, sizeof(g), &g);
 		CHECKERR(err);
-		err = clSetKernelArg(cl->kernel, 2, sizeof(b), &b);
+		err = clSetKernelArg(cl->kernel, 4, sizeof(b), &b);
 		CHECKERR(err);
 
 		// Set up input image
@@ -284,7 +291,7 @@ struct pixconv *pixconv_create(
 				cl->context, CL_MEM_READ_ONLY | CL_MEM_HOST_WRITE_ONLY,
 				&input_format, &input_desc, NULL, &err);
 		CHECKERR(err);
-		err = clSetKernelArg(cl->kernel, 3,
+		err = clSetKernelArg(cl->kernel, 5,
 				sizeof(rgb32_yuv420->input_image), &rgb32_yuv420->input_image);
 		CHECKERR(err);
 
@@ -302,7 +309,7 @@ struct pixconv *pixconv_create(
 				cl->context, CL_MEM_WRITE_ONLY | CL_MEM_HOST_READ_ONLY,
 				&output_y_format, &output_y_desc, NULL, &err);
 		CHECKERR(err);
-		err = clSetKernelArg(cl->kernel, 4,
+		err = clSetKernelArg(cl->kernel, 6,
 				sizeof(rgb32_yuv420->output_y_image), &rgb32_yuv420->output_y_image);
 		CHECKERR(err);
 
@@ -320,7 +327,7 @@ struct pixconv *pixconv_create(
 				cl->context, CL_MEM_WRITE_ONLY | CL_MEM_HOST_READ_ONLY,
 				&output_u_format, &output_u_desc, NULL, &err);
 		CHECKERR(err);
-		err = clSetKernelArg(cl->kernel, 5,
+		err = clSetKernelArg(cl->kernel, 7,
 				sizeof(rgb32_yuv420->output_u_image), &rgb32_yuv420->output_u_image);
 		CHECKERR(err);
 
@@ -338,7 +345,7 @@ struct pixconv *pixconv_create(
 				cl->context, CL_MEM_WRITE_ONLY | CL_MEM_HOST_READ_ONLY,
 				&output_v_format, &output_v_desc, NULL, &err);
 		CHECKERR(err);
-		err = clSetKernelArg(cl->kernel, 6,
+		err = clSetKernelArg(cl->kernel, 8,
 				sizeof(rgb32_yuv420->output_v_image), &rgb32_yuv420->output_v_image);
 		CHECKERR(err);
 
@@ -387,7 +394,7 @@ int pixconv_convert(
 		// Run kernel
 		err = clEnqueueNDRangeKernel(
 				cl->queue, cl->kernel, 2, NULL,
-				(const size_t[]) { conv->inrect.w, conv->inrect.h, 0 }, NULL,
+				(const size_t[]) { conv->outrect.w, conv->outrect.h, 0 }, NULL,
 				0, NULL, NULL);
 		CHECKERR(err);
 
@@ -430,7 +437,7 @@ int pixconv_convert(
 		CHECKERR(err);
 		err = clEnqueueNDRangeKernel(
 				cl->queue, cl->kernel, 2, NULL,
-				(const size_t[]) { conv->inrect.w, conv->inrect.h, 0 }, NULL,
+				(const size_t[]) { conv->outrect.w, conv->outrect.h, 0 }, NULL,
 				0, NULL, NULL);
 		CHECKERR(err);
 

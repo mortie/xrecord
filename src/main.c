@@ -205,8 +205,8 @@ int main(int argc, char **argv) {
 	conf.inrect.y = 0;
 	conf.inrect.w = imgsrc->screensize.w;
 	conf.inrect.h = imgsrc->screensize.h;
-	conf.outrect.w = imgsrc->screensize.w;
-	conf.outrect.h = imgsrc->screensize.h;
+	conf.outrect.w = imgsrc->screensize.w / 2;
+	conf.outrect.h = imgsrc->screensize.h / 2;
 	conf.outfile = "output.h264";
 	conf.timelinefile = "timeline.log";
 	conf.fps = 30;
@@ -249,8 +249,8 @@ int main(int argc, char **argv) {
 	struct encconf encconf = {
 		.id = AV_CODEC_ID_H264,
 		.fps = conf.fps,
-		.width = imgsrc->rect.w,
-		.height = imgsrc->rect.h,
+		.width = conf.outrect.w,
+		.height = conf.outrect.h,
 	};
 
 	if (find_encoder(&encctx.codec, &encctx.avctx, NULL, &encconf) < 0)
