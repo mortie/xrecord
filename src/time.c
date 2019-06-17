@@ -39,14 +39,11 @@ void stats_end(struct stats *stats) {
 void stats_print(struct stats *stats, const char *name, FILE *f) {
 	fprintf(f, "%s: Avg: ", name);
 	time_print(stats_get_avg(stats), f);
-	fprintf(f, ", last: ");
-	time_print(stats_get_last(stats), f);
+	fprintf(f, ", min: ");
+	time_print(stats_get_min(stats), f);
+	fprintf(f, ", max: ");
+	time_print(stats_get_max(stats), f);
 	fprintf(f, "\n");
-}
-
-double stats_get_last(struct stats *stats) {
-	int last = stats->timeidx == 0 ? stats->count - 1 : stats->timeidx - 1;
-	return stats->times[last];
 }
 
 double stats_get_avg(struct stats *stats) {
@@ -56,4 +53,24 @@ double stats_get_avg(struct stats *stats) {
 	}
 
 	return acc / stats->count;
+}
+
+double stats_get_min(struct stats *stats) {
+	double min = stats->times[0];
+	for (int i = 1; i < stats->count; ++i) {
+		if (stats->times[i] < min)
+			min = stats->times[i];
+	}
+
+	return min;
+}
+
+double stats_get_max(struct stats *stats) {
+	double max = stats->times[0];
+	for (int i = 1; i < stats->count; ++i) {
+		if (stats->times[i] > max)
+			max = stats->times[i];
+	}
+
+	return max;
 }

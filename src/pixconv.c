@@ -32,6 +32,7 @@ struct pixconv_rgb32_nv12 {
 	cl_mem input_image;
 	cl_mem output_y_image;
 	cl_mem output_uv_image;
+	cl_event events[2];
 };
 
 struct pixconv_rgb32_yuv420 {
@@ -40,6 +41,7 @@ struct pixconv_rgb32_yuv420 {
 	cl_mem output_y_image;
 	cl_mem output_u_image;
 	cl_mem output_v_image;
+	cl_event events[3];
 };
 
 static bool is_rgb32_nv12(enum AVPixelFormat in, enum AVPixelFormat out) {
@@ -194,6 +196,12 @@ struct pixconv *pixconv_create(
 				sizeof(rgb32_nv12->output_uv_image), &rgb32_nv12->output_uv_image);
 		CHECKERR(err);
 
+		// Set up events
+		for (int i = 0; i < 2; ++i) {
+			rgb32_nv12->events[i] = clCreateUserEvent(cl->context, &err);
+			CHECKERR(err);
+		}
+
 	} else if (is_rgb32_yuv420(infmt, outfmt)) {
 		struct pixconv_rgb32_yuv420 *rgb32_yuv420 = malloc(sizeof(*rgb32_yuv420));
 		cl = (struct pixconv_cl *)rgb32_yuv420;
@@ -291,6 +299,12 @@ struct pixconv *pixconv_create(
 				sizeof(rgb32_yuv420->output_v_image), &rgb32_yuv420->output_v_image);
 		CHECKERR(err);
 
+		// Set up events
+		for (int i = 0; i < 3; ++i) {
+			rgb32_yuv420->events[i] = clCreateUserEvent(cl->context, &err);
+			CHECKERR(err);
+		}
+
 	} else {
 		assume_unreached();
 	}
@@ -336,20 +350,24 @@ int pixconv_convert(
 
 		// Read Y
 		err = clEnqueueReadImage(
-				cl->queue, rgb32_nv12->output_y_image, CL_TRUE,
+				cl->queue, rgb32_nv12->output_y_image, CL_FALSE,
 				(const size_t[]) { 0, 0, 0 },
 				(const size_t[]) { conv->outrect.w, conv->outrect.h, 1 },
 				outstrides[0], 0, outplanes[0],
-				0, NULL, NULL);
+				0, NULL, &rgb32_nv12->events[0]);
 		CHECKERR(err);
 
 		// Read UV
 		err = clEnqueueReadImage(
-				cl->queue, rgb32_nv12->output_uv_image, CL_TRUE,
+				cl->queue, rgb32_nv12->output_uv_image, CL_FALSE,
 				(const size_t[]) { 0, 0, 0 },
 				(const size_t[]) { conv->outrect.w / 2, conv->outrect.h / 2, 1 },
 				outstrides[1], 0, outplanes[1],
-				0, NULL, NULL);
+				0, NULL, &rgb32_nv12->events[1]);
+		CHECKERR(err);
+
+		// Wait for reads to complete
+		err = clWaitForEvents(2, rgb32_nv12->events);
 		CHECKERR(err);
 
 		return 0;
@@ -375,29 +393,32 @@ int pixconv_convert(
 
 		// Read Y
 		err = clEnqueueReadImage(
-				cl->queue, rgb32_yuv420->output_y_image, CL_TRUE,
+				cl->queue, rgb32_yuv420->output_y_image, CL_FALSE,
 				(const size_t[]) { 0, 0, 0 },
 				(const size_t[]) { conv->outrect.w, conv->outrect.h, 1 },
 				outstrides[0], 0, outplanes[0],
-				0, NULL, NULL);
+				0, NULL, &rgb32_yuv420->events[0]);
 		CHECKERR(err);
 
 		// Read U
 		err = clEnqueueReadImage(
-				cl->queue, rgb32_yuv420->output_u_image, CL_TRUE,
+				cl->queue, rgb32_yuv420->output_u_image, CL_FALSE,
 				(const size_t[]) { 0, 0, 0 },
 				(const size_t[]) { conv->outrect.w / 2, conv->outrect.h / 2, 1 },
 				outstrides[1], 0, outplanes[1],
-				0, NULL, NULL);
+				0, NULL, &rgb32_yuv420->events[1]);
 		CHECKERR(err);
 
 		// Read V
 		err = clEnqueueReadImage(
-				cl->queue, rgb32_yuv420->output_v_image, CL_TRUE,
+				cl->queue, rgb32_yuv420->output_v_image, CL_FALSE,
 				(const size_t[]) { 0, 0, 0 },
 				(const size_t[]) { conv->outrect.w / 2, conv->outrect.h / 2, 1 },
 				outstrides[2], 0, outplanes[2],
-				0, NULL, NULL);
+				0, NULL, &rgb32_yuv420->events[2]);
+		CHECKERR(err);
+
+		err = clWaitForEvents(3, rgb32_yuv420->events);
 		CHECKERR(err);
 
 		return 0;
