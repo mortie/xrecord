@@ -20,6 +20,7 @@ static struct config {
 	struct rect outrect;
 	const char *outfile;
 	const char *timelinefile;
+	double fps;
 } conf;
 
 /*
@@ -29,6 +30,7 @@ static struct config {
 struct capctx {
 	struct imgsrc *imgsrc;
 	struct ringbuf *outq;
+	double fps;
 };
 
 static void *cap_thread(void *arg) {
@@ -40,6 +42,11 @@ static void *cap_thread(void *arg) {
 		ringbuf_put(ctx->outq, i, &buf);
 	}
 
+	double acc = 0;
+	double prev = time_now();
+	double target = (double)1 / ctx->fps;
+	int drift = 0;
+
 	while (1) {
 		struct membuf **membuf = ringbuf_write_start(ctx->outq);
 
@@ -47,6 +54,19 @@ static void *cap_thread(void *arg) {
 		ctx->imgsrc->get_frame(ctx->imgsrc, *membuf);
 		ringbuf_write_end(ctx->outq);
 		timeline_end("cap");
+
+		double now = time_now();
+		acc += target - (now - prev);
+		if (acc > 0) {
+			usleep(acc * 1000000ll);
+			acc -= time_now() - now;
+			drift = 0;
+		} else if (acc < 0) {
+			drift += 1;
+			if (drift % (int)ctx->fps == 0)
+				logln("Can't keep up! Accumulated %fs of drift.", -acc);
+		}
+		prev = time_now();
 	}
 
 	return NULL;
@@ -189,6 +209,7 @@ int main(int argc, char **argv) {
 	conf.outrect.h = imgsrc->screensize.h;
 	conf.outfile = "output.h264";
 	conf.timelinefile = "timeline.log";
+	conf.fps = 30;
 
 	if (conf.timelinefile) {
 		FILE *f = fopen(conf.timelinefile, "w");
@@ -211,6 +232,7 @@ int main(int argc, char **argv) {
 	struct capctx capctx = {
 		.imgsrc = imgsrc,
 		.outq = ringbuf_create(sizeof(void *), 2),
+		.fps = conf.fps,
 	};
 	pthread_t cap_th;
 	pthread_create(&cap_th, NULL, cap_thread, &capctx);
@@ -226,7 +248,7 @@ int main(int argc, char **argv) {
 
 	struct encconf encconf = {
 		.id = AV_CODEC_ID_H264,
-		.fps = 30,
+		.fps = conf.fps,
 		.width = imgsrc->rect.w,
 		.height = imgsrc->rect.h,
 	};
