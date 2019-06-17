@@ -251,6 +251,8 @@ int main(int argc, char **argv) {
 	struct pixconv *conv = pixconv_create(
 			imgsrc->rect, imgsrc->pixfmt,
 			conf.outrect, encfmt);
+	if (conv == NULL)
+		panic("Failed to create pixconv.");
 
 	struct convctx convctx = {
 		.conv = conv,

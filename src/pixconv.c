@@ -64,11 +64,62 @@ static int setup_cl(
 		struct pixconv_cl *cl,
 		const char *code, size_t len, const char *kname) {
 	int err;
-	cl_uint num_devices;
-	err = clGetDeviceIDs(
-			NULL, CL_DEVICE_TYPE_GPU, 1,
-			&cl->device, &num_devices);
+
+	cl_platform_id platform_ids[10];
+	cl_uint num_platforms;
+	err = clGetPlatformIDs(10, platform_ids, &num_platforms);
 	CHECKERR(err);
+
+	for (unsigned int i = 0; i < num_platforms; ++i) {
+		char platname[128];
+		err = clGetPlatformInfo(
+				platform_ids[i],  CL_PLATFORM_NAME,
+				sizeof(platname), platname, NULL);
+		CHECKERR(err);
+
+		char vendname[128];
+		err = clGetPlatformInfo(
+				platform_ids[i],  CL_PLATFORM_VENDOR,
+				sizeof(vendname), vendname, NULL);
+		CHECKERR(err);
+
+		logln("Platform %i: %s (%s)", i, platname, vendname);
+
+		cl_device_id device_ids[10];
+		cl_uint num_devices;
+		err = clGetDeviceIDs(
+				platform_ids[i], CL_DEVICE_TYPE_ALL, 10,
+				device_ids, &num_devices);
+		CHECKERR(err);
+
+		for (unsigned int j = 0; j < num_devices; ++j) {
+			char devname[128];
+			err = clGetDeviceInfo(
+					device_ids[j], CL_DEVICE_NAME,
+					sizeof(devname), devname, NULL);
+			CHECKERR(err);
+
+			cl_bool image_support;
+			err = clGetDeviceInfo(
+					device_ids[j], CL_DEVICE_IMAGE_SUPPORT,
+					sizeof(image_support), &image_support, NULL);
+			CHECKERR(err);
+
+			if (image_support) {
+				logln("  Device %i: %s", j, devname);
+				cl->device = device_ids[j];
+			} else {
+				logln("  Device %i: %s - No image support, ignoring.", j, devname);
+			}
+		}
+	}
+
+	char devname[128];
+	err = clGetDeviceInfo(
+			cl->device, CL_DEVICE_NAME,
+			sizeof(devname), devname, NULL);
+	CHECKERR(err);
+	logln("Using %s.", devname);
 
 	cl->context = clCreateContext(0, 1, &cl->device, NULL, NULL, &err);
 	CHECKERR(err);
