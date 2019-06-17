@@ -10,6 +10,7 @@
 #include "rect.h"
 #include "util.h"
 #include "time.h"
+#include "timeline.h"
 #include "imgsrc.h"
 #include "pixconv.h"
 #include "venc.h"
@@ -18,16 +19,8 @@ static struct config {
 	struct rect inrect;
 	struct rect outrect;
 	const char *outfile;
+	const char *timelinefile;
 } conf;
-
-static struct stats cap_wlock_stats;
-static struct stats cap_stats;
-static struct stats conv_rlock_stats;
-static struct stats conv_wlock_stats;
-static struct stats conv_stats;
-static struct stats enc_rlock_stats;
-static struct stats enc_stats;
-static struct stats total_stats;
 
 /*
  * Capturer
@@ -48,15 +41,12 @@ static void *cap_thread(void *arg) {
 	}
 
 	while (1) {
-		stats_begin(&cap_wlock_stats);
 		struct membuf **membuf = ringbuf_write_start(ctx->outq);
-		stats_end(&cap_wlock_stats);
 
-		stats_begin(&cap_stats);
+		timeline_begin("cap");
 		ctx->imgsrc->get_frame(ctx->imgsrc, *membuf);
-
 		ringbuf_write_end(ctx->outq);
-		stats_end(&cap_stats);
+		timeline_end("cap");
 	}
 
 	return NULL;
@@ -88,16 +78,10 @@ static void *conv_thread(void *arg) {
 	}
 
 	while (1) {
-		stats_begin(&conv_rlock_stats);
 		struct membuf **membuf = ringbuf_read_start(ctx->inq);
-		stats_end(&conv_rlock_stats);
-
-		stats_begin(&conv_wlock_stats);
 		AVFrame **frame = ringbuf_write_start(ctx->outq);
-		stats_end(&conv_wlock_stats);
 
-		stats_begin(&conv_stats);
-
+		timeline_begin("conv");
 		int ret = pixconv_convert(ctx->conv,
 				(uint8_t  *[]) { (*membuf)->data }, (const int[]) { ctx->bpl },
 				(*frame)->data, (*frame)->linesize);
@@ -106,7 +90,7 @@ static void *conv_thread(void *arg) {
 
 		ringbuf_write_end(ctx->outq);
 		ringbuf_read_end(ctx->inq);
-		stats_end(&conv_stats);
+		timeline_end("conv");
 	}
 
 	return NULL;
@@ -144,15 +128,19 @@ static void *enc_thread(void *arg) {
 
 	int pts = 0;
 
+	double nextsec = time_now() + 1;
+	int framecount = 0;
 	while (1) {
-		stats_begin(&total_stats);
+		if (time_now() >= nextsec) {
+			logln("FPS: %i", framecount);
+			framecount = 0;
+			nextsec += 1;
+		}
+		framecount += 1;
 
-		stats_begin(&enc_rlock_stats);
 		AVFrame **avf = ringbuf_read_start(ctx->inq);
-		stats_end(&enc_rlock_stats);
 
-		stats_begin(&enc_stats);
-
+		timeline_begin("enc");
 		(*avf)->pts = pts++;
 
 		AVFrame *f;
@@ -181,8 +169,7 @@ static void *enc_thread(void *arg) {
 		}
 
 		ringbuf_read_end(ctx->inq);
-		stats_end(&enc_stats);
-		stats_end(&total_stats);
+		timeline_end("enc");
 	}
 
 	return NULL;
@@ -201,6 +188,20 @@ int main(int argc, char **argv) {
 	conf.outrect.w = imgsrc->screensize.w;
 	conf.outrect.h = imgsrc->screensize.h;
 	conf.outfile = "output.h264";
+	conf.timelinefile = "timeline.log";
+
+	if (conf.timelinefile) {
+		FILE *f = fopen(conf.timelinefile, "w");
+		if (f == NULL) {
+			logperror("%s", conf.timelinefile);
+		} else {
+			timeline_init(f);
+		}
+
+		timeline_register("cap");
+		timeline_register("conv");
+		timeline_register("enc");
+	}
 
 	/*
 	 * Set up capturer
@@ -209,7 +210,7 @@ int main(int argc, char **argv) {
 	imgsrc->init(imgsrc, conf.inrect);
 	struct capctx capctx = {
 		.imgsrc = imgsrc,
-		.outq = ringbuf_create(sizeof(void *), 3),
+		.outq = ringbuf_create(sizeof(void *), 2),
 	};
 	pthread_t cap_th;
 	pthread_create(&cap_th, NULL, cap_thread, &capctx);
@@ -221,7 +222,7 @@ int main(int argc, char **argv) {
 	struct encctx encctx;
 	encctx.file = fopen(conf.outfile, "w");
 	if (encctx.file == NULL) ppanic("%s", conf.outfile);
-	encctx.inq = ringbuf_create(sizeof(AVFrame *), 3);
+	encctx.inq = ringbuf_create(sizeof(AVFrame *), 2);
 
 	struct encconf encconf = {
 		.id = AV_CODEC_ID_H264,
@@ -264,18 +265,9 @@ int main(int argc, char **argv) {
 	pthread_t conv_th;
 	pthread_create(&conv_th, NULL, conv_thread, &convctx);
 
-	while (1) {
-		sleep(3);
-		fprintf(stderr, "\n");
-		stats_print(&cap_wlock_stats,  "Capture WLock", stderr);
-		stats_print(&cap_stats,        "Capture      ", stderr);
-		stats_print(&conv_rlock_stats, "Convert RLock", stderr);
-		stats_print(&conv_wlock_stats, "Convert WLock", stderr);
-		stats_print(&conv_stats,       "Convert      ", stderr);
-		stats_print(&enc_rlock_stats,  "Encode RLock ", stderr);
-		stats_print(&enc_stats,        "Encode       ", stderr);
-		stats_print(&total_stats,      "Total        ", stderr);
-	}
+	pthread_join(cap_th, NULL);
+	pthread_join(conv_th, NULL);
+	pthread_join(enc_th, NULL);
 
 	return EXIT_SUCCESS;
 }
