@@ -267,6 +267,13 @@ struct pixconv *pixconv_create(
 			return NULL;
 		}
 
+		float scale_x = (float)inrect.w / (float)outrect.w;
+		err = clSetKernelArg(cl->kernel, 0, sizeof(scale_x), &scale_x);
+		CHECKERR(err);
+		float scale_y = (float)inrect.h / (float)outrect.h;
+		err = clSetKernelArg(cl->kernel, 1, sizeof(scale_y), &scale_y);
+		CHECKERR(err);
+
 		// Set up RGB positions
 		int r, g, b;
 		rgbdesc(infmt, &r, &g, &b);
