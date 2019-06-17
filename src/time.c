@@ -1,43 +1,47 @@
-#include "stats.h"
+#include "time.h"
 
 #include <time.h>
 
-// Get current time in seconds
-static double gettime() {
+#include "util.h"
+
+double time_now() {
 	struct timespec ts;
 	clock_gettime(CLOCK_MONOTONIC, &ts);
 	return (double)ts.tv_sec + (double)ts.tv_nsec / 1000000000.0;
 }
 
-// Format time in seconds
-static void timefmt(char *buf, double secs) {
-	if (secs < 0.001)
-		snprintf(buf, 10, "%.3fµs", secs * 1000000.0);
-	else if (secs < 1)
-		snprintf(buf, 10, "%.3fms", secs * 1000.0);
+void time_print(double t, FILE *f) {
+	if (t < 0.001)
+		fprintf(f, "%.3fµs", t * 1000000.0);
+	else if (t < 1)
+		fprintf(f, "%.3fms", t * 1000.0);
 	else
-		snprintf(buf, 10, "%.3fs", secs);
+		fprintf(f, "%.3fs", t);
+}
+
+void _time_done(const char *desc, double t) {
+	logfmt("Timer done: %s: ", desc);
+	time_print(t, logfile);
+	fprintf(logfile, "\n");
 }
 
 void stats_begin(struct stats *stats) {
-	stats->start = gettime();
+	stats->start = time_now();
 }
 
 void stats_end(struct stats *stats) {
-	stats->times[stats->timeidx] = gettime() - stats->start;
+	stats->times[stats->timeidx] = time_now() - stats->start;
 	stats->timeidx = (stats->timeidx + 1) % STATS_TIMES;
 	if (stats->count < STATS_TIMES)
 		stats->count += 1;
 }
 
 void stats_print(struct stats *stats, const char *name, FILE *f) {
-	char abuf[10];
-	timefmt(abuf, stats_get_avg(stats));
-
-	char lbuf[10];
-	timefmt(lbuf, stats_get_last(stats));
-
-	fprintf(f, "%s: Avg: %s, last: %s\n", name, abuf, lbuf);
+	fprintf(f, "%s: Avg: ", name);
+	time_print(stats_get_avg(stats), f);
+	fprintf(f, ", last: ");
+	time_print(stats_get_last(stats), f);
+	fprintf(f, "\n");
 }
 
 double stats_get_last(struct stats *stats) {

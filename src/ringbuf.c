@@ -64,7 +64,7 @@ void *ringbuf_read_start(struct ringbuf *rb) {
 }
 
 void ringbuf_read_end(struct ringbuf *rb) {
-	rb->ri = (rb->wi + 1) % rb->nmemb;
+	rb->ri = (rb->ri + 1) % rb->nmemb;
 	rb->used -= 1;
 	pthread_cond_signal(&rb->cond_space);
 	pthread_mutex_unlock(&rb->mut);

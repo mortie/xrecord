@@ -9,7 +9,7 @@
 #include "ringbuf.h"
 #include "rect.h"
 #include "util.h"
-#include "stats.h"
+#include "time.h"
 #include "imgsrc.h"
 #include "pixconv.h"
 #include "venc.h"
@@ -41,17 +41,19 @@ struct capctx {
 static void *cap_thread(void *arg) {
 	struct capctx *ctx = (struct capctx *)arg;
 
+	// Prepare mem bufs
+	for (int i = 0; i < ctx->outq->nmemb; ++i) {
+		struct membuf *buf = ctx->imgsrc->alloc_membuf(ctx->imgsrc);
+		ringbuf_put(ctx->outq, i, &buf);
+	}
+
 	while (1) {
 		stats_begin(&cap_wlock_stats);
-		char *data = ringbuf_write_start(ctx->outq);
+		struct membuf **membuf = ringbuf_write_start(ctx->outq);
 		stats_end(&cap_wlock_stats);
 
 		stats_begin(&cap_stats);
-
-		memcpy(
-				data,
-				ctx->imgsrc->get_frame(ctx->imgsrc),
-				ctx->imgsrc->bpl * ctx->imgsrc->rect.h);
+		ctx->imgsrc->get_frame(ctx->imgsrc, *membuf);
 
 		ringbuf_write_end(ctx->outq);
 		stats_end(&cap_stats);
@@ -87,7 +89,7 @@ static void *conv_thread(void *arg) {
 
 	while (1) {
 		stats_begin(&conv_rlock_stats);
-		void *data = ringbuf_read_start(ctx->inq);
+		struct membuf **membuf = ringbuf_read_start(ctx->inq);
 		stats_end(&conv_rlock_stats);
 
 		stats_begin(&conv_wlock_stats);
@@ -97,7 +99,7 @@ static void *conv_thread(void *arg) {
 		stats_begin(&conv_stats);
 
 		int ret = pixconv_convert(ctx->conv,
-				(uint8_t  *[]) { data }, (const int[]) { ctx->bpl },
+				(uint8_t  *[]) { (*membuf)->data }, (const int[]) { ctx->bpl },
 				(*frame)->data, (*frame)->linesize);
 		if (ret < 0)
 			panic("Pixel conversion failed.");
@@ -207,7 +209,7 @@ int main(int argc, char **argv) {
 	imgsrc->init(imgsrc, conf.inrect);
 	struct capctx capctx = {
 		.imgsrc = imgsrc,
-		.outq = ringbuf_create(imgsrc->bpl * imgsrc->rect.h * 4, 3),
+		.outq = ringbuf_create(sizeof(void *), 3),
 	};
 	pthread_t cap_th;
 	pthread_create(&cap_th, NULL, cap_thread, &capctx);

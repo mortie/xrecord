@@ -5,19 +5,21 @@
 #include <string.h>
 #include <errno.h>
 
+#define logfile stderr
+
 #define logfmt(...) do { \
-	fprintf(stderr, "%s:%i: ", __FILE__, __LINE__); \
-	fprintf(stderr, __VA_ARGS__); \
+	fprintf(logfile, "%s:%i: ", __FILE__, __LINE__); \
+	fprintf(logfile, __VA_ARGS__); \
 } while (0)
 
 #define logln(...) do { \
 	logfmt(__VA_ARGS__); \
-	fprintf(stderr, "\n"); \
+	fprintf(logfile, "\n"); \
 } while (0)
 
 #define logperror(...) do { \
 	logfmt(__VA_ARGS__); \
-	fprintf(stderr, ": %s\n", strerror(errno)); \
+	fprintf(logfile, ": %s\n", strerror(errno)); \
 } while (0)
 
 #define panic(...) do { \
@@ -27,8 +29,8 @@
 
 #define ppanic(...) do { \
 	logfmt("*** PANIC: "); \
-	fprintf(stderr, __VA_ARGS__); \
-	fprintf(stderr, ": %s\n", strerror(errno)); \
+	fprintf(logfile, __VA_ARGS__); \
+	fprintf(logfile, ": %s\n", strerror(errno)); \
 } while (0)
 
 #define assume(expr) do { \

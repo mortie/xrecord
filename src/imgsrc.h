@@ -6,9 +6,8 @@
 #include <stdint.h>
 #include <libavcodec/avcodec.h>
 
-struct imgbuf {
+struct membuf {
 	void *data;
-	int bpl;
 };
 
 struct imgsrc {
@@ -18,11 +17,12 @@ struct imgsrc {
 	// Free all memory allocated by imgsrc_create_*.
 	void (*free)(struct imgsrc *src);
 
+	// Set up a memory buffer (hopefully for shared memory)
+	struct membuf *(*alloc_membuf)(struct imgsrc *src);
+
 	// Get a video frame.
-	// This will never be freed, but the buffer will never be referenced
-	// again the next time get_frame is called. The buffer should probably be
-	// re-used between calls.
-	void *(*get_frame)(struct imgsrc *src);
+	// Fills membuf->data.
+	void (*get_frame)(struct imgsrc *src, struct membuf *membuf);
 
 	// Variables initialized on creation (i.e before init)
 	struct rect screensize;
