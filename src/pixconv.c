@@ -60,9 +60,7 @@ static void rgbdesc(enum AVPixelFormat fmt, int *r, int *g, int *b) {
 	}
 }
 
-static int setup_cl(
-		struct pixconv_cl *cl,
-		const char *code, size_t len, const char *kname) {
+static int setup_cl(struct pixconv_cl *cl, const char *kname) {
 	int err;
 
 	cl_platform_id platform_ids[10];
@@ -129,8 +127,8 @@ static int setup_cl(
 
 	cl->program = clCreateProgramWithSource(
 			cl->context, 1,
-			(const char *[]) { (char *)code },
-			(size_t[]) { len },
+			(const char *[]) { (char *)ASSETS_CONVERT_IMAGE_CL },
+			(size_t[]) { ASSETS_CONVERT_IMAGE_CL_LEN },
 			&err);
 	CHECKERR(err);
 
@@ -172,10 +170,7 @@ struct pixconv *pixconv_create(
 		struct pixconv_rgb32_nv12 *rgb32_nv12 = malloc(sizeof(*rgb32_nv12));
 		cl = (struct pixconv_cl *)rgb32_nv12;
 
-		int ret = setup_cl(cl,
-				(const char *)ASSETS_CONVERT_RGB32_NV12_CL,
-				ASSETS_CONVERT_RGB32_NV12_CL_LEN,
-				"convert_rgb32_nv12");
+		int ret = setup_cl(cl, "convert_rgb32_nv12");
 
 		if (ret < 0) {
 			logln("Creating kernel failed.");
@@ -257,10 +252,7 @@ struct pixconv *pixconv_create(
 		struct pixconv_rgb32_yuv420 *rgb32_yuv420 = malloc(sizeof(*rgb32_yuv420));
 		cl = (struct pixconv_cl *)rgb32_yuv420;
 
-		int ret = setup_cl(cl,
-				(const char *)ASSETS_CONVERT_RGB32_YUV420_CL,
-				ASSETS_CONVERT_RGB32_YUV420_CL_LEN,
-				"convert_rgb32_yuv420");
+		int ret = setup_cl(cl, "convert_rgb32_yuv420");
 
 		if (ret < 0) {
 			logln("Creating kernel failed.");
