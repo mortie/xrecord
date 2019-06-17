@@ -54,7 +54,7 @@ static bool is_rgb32_yuv420(enum AVPixelFormat in, enum AVPixelFormat out) {
 
 static void rgbdesc(enum AVPixelFormat fmt, int *r, int *g, int *b) {
 	if (fmt == AV_PIX_FMT_BGRA) {
-		*b = 0; *g = 8; *r = 16;
+		*b = 0; *g = 1; *r = 2;
 	} else {
 		panic("Unsupported pixel format: %s", av_get_pix_fmt_name(fmt));
 	}
@@ -197,8 +197,8 @@ struct pixconv *pixconv_create(
 
 		// Set up input image
 		cl_image_format input_format = {
-			.image_channel_data_type = CL_UNSIGNED_INT32,
-			.image_channel_order = CL_R,
+			.image_channel_data_type = CL_UNSIGNED_INT8,
+			.image_channel_order = CL_RGBA,
 		};
 		cl_image_desc input_desc = {
 			.image_type = CL_MEM_OBJECT_IMAGE2D,
@@ -286,8 +286,8 @@ struct pixconv *pixconv_create(
 
 		// Set up input image
 		cl_image_format input_format = {
-			.image_channel_data_type = CL_UNSIGNED_INT32,
-			.image_channel_order = CL_R,
+			.image_channel_data_type = CL_UNSIGNED_INT8,
+			.image_channel_order = CL_RGBA,
 		};
 		cl_image_desc input_desc = {
 			.image_type = CL_MEM_OBJECT_IMAGE2D,
