@@ -27,7 +27,7 @@ void ringbuf_put(struct ringbuf *rb, int idx, void *data) {
 	memcpy(rb->data + rb->size * idx, data, rb->size);
 }
 
-void *ringbuf_gte(struct ringbuf *rb, int idx) {
+void *ringbuf_get(struct ringbuf *rb, int idx) {
 	return rb->data + rb->size * idx;
 }
 
@@ -38,10 +38,12 @@ void *ringbuf_write_start(struct ringbuf *rb) {
 	while (rb->used == rb->nmemb)
 		pthread_cond_wait(&rb->cond_space, &rb->mut);
 
+	pthread_mutex_unlock(&rb->mut);
 	return rb->data + rb->size * rb->wi;
 }
 
 void ringbuf_write_end(struct ringbuf *rb) {
+	pthread_mutex_lock(&rb->mut);
 	rb->wi = (rb->wi + 1) % rb->nmemb;
 	rb->used += 1;
 	pthread_cond_signal(&rb->cond_data);
@@ -60,10 +62,12 @@ void *ringbuf_read_start(struct ringbuf *rb) {
 	while (rb->used == 0)
 		pthread_cond_wait(&rb->cond_data, &rb->mut);
 
+	pthread_mutex_unlock(&rb->mut);
 	return rb->data + rb->size * rb->ri;
 }
 
 void ringbuf_read_end(struct ringbuf *rb) {
+	pthread_mutex_lock(&rb->mut);
 	rb->ri = (rb->ri + 1) % rb->nmemb;
 	rb->used -= 1;
 	pthread_cond_signal(&rb->cond_space);
