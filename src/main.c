@@ -58,13 +58,15 @@ static void *cap_thread(void *arg) {
 		timeline_end("cap");
 
 		double now = time_now();
-		acc += target - (now - prev);
-		if (acc > 0) {
-			usleep(acc * 1000000ll);
-			acc -= time_now() - now;
-		} else if (acc < -2) {
-			logln("Can't keep up! Skipping %.3fms.", -(acc * 1000.0));
-			acc = 0;
+		if (ctx->fps != INFINITY) {
+			acc += target - (now - prev);
+			if (acc > 0) {
+				usleep(acc * 1000000ll);
+				acc -= time_now() - now;
+			} else if (acc < -2) {
+				logln("Can't keep up! Skipping %.3fms.", -(acc * 1000.0));
+				acc = 0;
+			}
 		}
 		prev = time_now();
 	}
@@ -200,6 +202,7 @@ static void parse_args(int argc, char **argv, struct config *conf) {
 		{ "timeline", required_argument, 0, 't' },
 		{ "rect",     required_argument, 0, 'r' },
 		{ "size",     required_argument, 0, 's' },
+		{ "fps",      required_argument, 0, 'f' },
 		{ "help",     no_argument,       0, 'h' },
 		{ 0 },
 	};
@@ -225,6 +228,13 @@ static void parse_args(int argc, char **argv, struct config *conf) {
 		case 's':
 			rect_parse(&conf->outrect, optarg);
 			size_changed = true;
+			break;
+
+		case 'f':
+			if (strcmp(optarg, "max") == 0)
+				conf->fps = INFINITY;
+			else
+				conf->fps = atof(optarg);
 			break;
 
 		case 'h':
@@ -309,7 +319,7 @@ int main(int argc, char **argv) {
 
 	struct encconf encconf = {
 		.id = AV_CODEC_ID_H264,
-		.fps = conf.fps,
+		.fps = conf.fps == INFINITY ? 1024 : conf.fps,
 		.width = conf.outrect.w,
 		.height = conf.outrect.h,
 	};
