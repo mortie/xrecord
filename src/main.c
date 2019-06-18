@@ -39,12 +39,6 @@ struct capctx {
 static void *cap_thread(void *arg) {
 	struct capctx *ctx = (struct capctx *)arg;
 
-	// Prepare mem bufs
-	for (int i = 0; i < ctx->outq->nmemb; ++i) {
-		struct membuf *buf = ctx->imgsrc->alloc_membuf(ctx->imgsrc);
-		ringbuf_put(ctx->outq, i, &buf);
-	}
-
 	double acc = 0;
 	double prev = time_now();
 	double target = (double)1 / ctx->fps;
@@ -87,17 +81,6 @@ struct convctx {
 
 static void *conv_thread(void *arg) {
 	struct convctx *ctx = (struct convctx *)arg;
-
-	// Prepare avframes
-	for (int i = 0; i < ctx->outq->nmemb; ++i) {
-		AVFrame *f = av_frame_alloc();
-		f->format = ctx->conv->outfmt;
-		f->width = ctx->conv->outrect.w;
-		f->height = ctx->conv->outrect.h;
-		if (av_frame_get_buffer(f, 32) < 0)
-			panic("Failed to get AV frame buffer.");
-		ringbuf_put(ctx->outq, i, &f);
-	}
 
 	while (1) {
 		struct membuf **membuf = ringbuf_read_start(ctx->inq);
@@ -302,12 +285,18 @@ int main(int argc, char **argv) {
 	 */
 
 	imgsrc->init(imgsrc, conf.inrect);
+
 	struct capctx capctx = {
 		.imgsrc = imgsrc,
 		.outq = ringbuf_create(sizeof(void *), NUM_BUFFERS),
 		.fps = conf.fps,
 	};
 
+	// Prepare mem bufs
+	for (int i = 0; i < capctx.outq->nmemb; ++i) {
+		struct membuf *buf = capctx.imgsrc->alloc_membuf(capctx.imgsrc);
+		ringbuf_put(capctx.outq, i, &buf);
+	}
 	/*
 	 * Set up encoder
 	 */
@@ -351,6 +340,17 @@ int main(int argc, char **argv) {
 		.inq = capctx.outq,
 		.outq = encctx.inq,
 	};
+
+	// Prepare avframes
+	for (int i = 0; i < convctx.outq->nmemb; ++i) {
+		AVFrame *f = av_frame_alloc();
+		f->format = convctx.conv->outfmt;
+		f->width = convctx.conv->outrect.w;
+		f->height = convctx.conv->outrect.h;
+		if (av_frame_get_buffer(f, 32) < 0)
+			panic("Failed to get AV frame buffer.");
+		ringbuf_put(convctx.outq, i, &f);
+	}
 
 	/*
 	 * Create threads
