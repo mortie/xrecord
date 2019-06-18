@@ -69,11 +69,6 @@ for line in open(infile):
     kind = match.group(2)
     time = float(match.group(3))
 
-    if starttime == None or time < starttime:
-        starttime = time
-    if endtime == None or time > endtime:
-        endtime = time
-
     if kind == "REGISTER":
         timelinesMap[name] = Timeline(name)
         timelines.append(timelinesMap[name])
@@ -82,6 +77,11 @@ for line in open(infile):
             print("Warning: "+name+" got BEGIN without REGISTER")
             continue
         timelinesMap[name].begin(time)
+
+        if starttime == None or time < starttime:
+            starttime = time
+        if endtime == None or time > endtime:
+            endtime = time
     elif kind == "END":
         if timelinesMap[name] is None:
             print("Warning: "+name+" got END without REGISTER")

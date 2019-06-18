@@ -297,8 +297,6 @@ int main(int argc, char **argv) {
 		.outq = ringbuf_create(sizeof(void *), NUM_BUFFERS),
 		.fps = conf.fps,
 	};
-	pthread_t cap_th;
-	pthread_create(&cap_th, NULL, cap_thread, &capctx);
 
 	/*
 	 * Set up encoder
@@ -327,9 +325,6 @@ int main(int argc, char **argv) {
 		encfmt = encctx.avctx->pix_fmt;
 	}
 
-	pthread_t enc_th;
-	pthread_create(&enc_th, NULL, enc_thread, &encctx);
-
 	/*
 	 * Set up converter
 	 */
@@ -347,8 +342,22 @@ int main(int argc, char **argv) {
 		.outq = encctx.inq,
 	};
 
+	/*
+	 * Create threads
+	 */
+
+	pthread_t cap_th;
+	pthread_create(&cap_th, NULL, cap_thread, &capctx);
+
 	pthread_t conv_th;
 	pthread_create(&conv_th, NULL, conv_thread, &convctx);
+
+	pthread_t enc_th;
+	pthread_create(&enc_th, NULL, enc_thread, &encctx);
+
+	/*
+	 * Wait
+	 */
 
 	pthread_join(cap_th, NULL);
 	pthread_join(conv_th, NULL);
