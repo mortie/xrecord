@@ -199,14 +199,15 @@ static void *enc_thread(void *arg) {
 static void parse_args(int argc, char **argv, struct config *conf) {
 	struct option long_opts[] = {
 		{ "timeline", required_argument, 0, 't' },
-		{ "in-rect",  required_argument, 0, 'i' },
-		{ "out-rect", required_argument, 0, 'r' },
+		{ "rect",     required_argument, 0, 'r' },
+		{ "size",     required_argument, 0, 's' },
 		{ "help",     no_argument,       0, 'h' },
 		{ 0 },
 	};
 
 	int c;
 	int option_ind;
+	bool size_changed = false;
 	while (1) {
 		c = getopt_long(argc, argv, "t:i:r:h", long_opts, &option_ind);
 
@@ -218,12 +219,13 @@ static void parse_args(int argc, char **argv, struct config *conf) {
 			conf->timelinefile = optarg;
 			break;
 
-		case 'i':
+		case 'r':
 			rect_parse(&conf->inrect, optarg);
 			break;
 
-		case 'r':
+		case 's':
 			rect_parse(&conf->outrect, optarg);
+			size_changed = true;
 			break;
 
 		case 'h':
@@ -238,13 +240,20 @@ static void parse_args(int argc, char **argv, struct config *conf) {
 		}
 	}
 
+	if (!size_changed) {
+		conf->outrect.w = conf->inrect.w;
+		conf->outrect.h = conf->inrect.h;
+	}
+
 	if (argv[optind] == NULL) {
 		printf("Usage: %s [options] <outfile>\n", argv[0]);
 		exit(EXIT_FAILURE);
 	}
 
 	conf->outfile = argv[optind];
-	logln("Writing to %s.", conf->outfile);
+	logln("Using input rectangle %ix%i+%i+%i",
+			conf->inrect.w, conf->inrect.h, conf->inrect.x, conf->inrect.y);
+	logln("Writing %ix%i to %s.", conf->outrect.w, conf->outrect.h, conf->outfile);
 }
 
 int main(int argc, char **argv) {
