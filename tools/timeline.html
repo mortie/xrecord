@@ -3,8 +3,209 @@
 	<head>
 		<meta charset="utf-8">
 		<title>Timeline</title>
+		<style>
+* {
+	box-sizing: border-box;
+}
+
+#container {
+	display: flex;
+	border: 1px solid black;
+}
+
+#names {
+	width: 60px;
+	border-right: 1px solid black;
+}
+
+#names .name {
+	padding-right: 6px;
+	text-align: right;
+}
+
+#scroll {
+	flex: 1;
+	overflow-x: auto;
+	position: relative;
+}
+
+#data {
+	top: 0px;
+	position: relative;
+}
+
+#ticks .tick {
+	position: absolute;
+	height: 100%;
+	top: 0px;
+	border-left: 1px dashed #666;
+}
+
+#data .timeline {
+	position: relative;
+}
+
+#data .block {
+	position: absolute;
+	top: 20%;
+	height: 60%;
+	background-color: rgb(60, 84, 242);
+	border: 1px solid rgb(42, 67, 194);
+}
+
+.timeline {
+	height: 80px;
+	line-height: 80px;
+}
+.timeline:not(:first-child) {
+	border-top: 1px solid black;
+}
+
+.timeline:last-child {
+	border-bottom: 1px solid black;
+}
+		</style>
 	</head>
 	<body>
-		<img src="../timeline.svg">
+		<input type="file" id="file" >
+
+		<div id="container">
+			<div id="names"></div>
+			<div id="scroll">
+				<div id="data"></div>
+				<div id="ticks"></div>
+			</div>
+		</div>
+
+		<script>
+let elNames = document.getElementById("names");
+let elData = document.getElementById("data");
+let elTicks = document.getElementById("ticks");
+
+let hsec = 1000;
+
+class Timeline {
+	constructor(name) {
+		this.name = name;
+		this.rangeStart = null;
+		this.ranges = [];
+	}
+
+	begin(time) {
+		this.rangeStart = time;
+	}
+
+	end(time) {
+		if (this.rangeStart == null) {
+			console.warning(this.name+" got end without a begin");
+			return;
+		}
+		this.ranges.push([ this.rangeStart, time ]);
+		this.rangeStart = null;
+	}
+
+	done(endTime) {
+		if (this.rangeStart != null)
+			this.ranges.push([ this.rangeStart, endTime ])
+	}
+}
+
+function show(timelines, startTime, endTime) {
+	elNames.innerHTML = "";
+	elData.innerHTML = "";
+
+	// Add names
+	for (let timeline of timelines) {
+		let el = document.createElement("div");
+		el.className = "timeline name";
+		el.innerText = timeline.name;
+		elNames.appendChild(el);
+	}
+
+	// Add times
+	for (let timeline of timelines) {
+		let line = document.createElement("div");
+		line.className = "timeline line";
+		line.style.minWidth = `${hsec * (endTime - startTime)}px`;
+
+		for (let range of timeline.ranges) {
+			let el = document.createElement("div");
+			el.className = "block";
+			el.style.left = `${hsec * (range[0] - startTime)}px`;
+			el.style.width = `${hsec * (range[1] - range[0])}px`;
+			line.appendChild(el);
+		}
+
+		elData.appendChild(line);
+	}
+
+	// Add ticks
+	for (let pos = startTime; pos < endTime; pos += 1 / 30) {
+		let el = document.createElement("div");
+		el.className = "tick";
+		el.style.left = `${hsec * (pos - startTime)}px`;
+		elTicks.appendChild(el);
+	}
+}
+
+function readLog(log) {
+	let rx = /(.*)?:\s*(.*)?:\s*(.*)/;
+	let timelines = [];
+	let timelinesMap = {};
+
+	let startTime = null;
+	let endTime = null;
+
+	let lines = log.split("\n");
+	for (let i = 0; i < lines.length - 1; ++i) {
+		let line = lines[i];
+		let match = line.match(rx);
+		if (match == null)
+			continue;
+
+		let name = match[1];
+		let kind = match[2];
+		let time = parseFloat(match[3]);
+
+		if (kind == "REGISTER") {
+			timelinesMap[name] = new Timeline(name);
+			timelines.push(timelinesMap[name]);
+		} else if (kind == "BEGIN") {
+			if (timelinesMap[name] == null) {
+				console.warning(name+" got BEGIN without REGISTER");
+				continue;
+			}
+
+			timelinesMap[name].begin(time);
+			if (startTime == null || time < startTime)
+				startTime = time
+			if (endTime == null || time > endTime)
+				endTime = time
+		} else if (kind == "END") {
+			if (timelinesMap[name] == null) {
+				console.warning(name+" got END without REGISTER");
+				continue;
+			}
+
+			timelinesMap[name].end(time);
+		}
+	}
+
+	for (let timeline of timelines)
+		timeline.done(endTime);
+
+	show(timelines, startTime, endTime);
+}
+
+document.getElementById("file").addEventListener("change", evt => {
+	let file = evt.target.files[0];
+	let reader = new FileReader();
+	reader.onload = content => {
+		readLog(reader.result);
+	};
+
+	reader.readAsText(file, "utf-8");
+});
+		</script>
 	</body>
 </html>
