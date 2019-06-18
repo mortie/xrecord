@@ -4,6 +4,7 @@
 #include <stdint.h>
 #include <pthread.h>
 #include <unistd.h>
+#include <getopt.h>
 #include <libavcodec/avcodec.h>
 
 #include "ringbuf.h"
@@ -15,13 +16,13 @@
 #include "pixconv.h"
 #include "venc.h"
 
-static struct config {
+struct config {
 	struct rect inrect;
 	struct rect outrect;
 	const char *outfile;
 	const char *timelinefile;
 	double fps;
-} conf;
+};
 
 /*
  * Capturer
@@ -195,21 +196,75 @@ static void *enc_thread(void *arg) {
 	return NULL;
 }
 
+static void parse_args(int argc, char **argv, struct config *conf) {
+	struct option long_opts[] = {
+		{ "timeline", required_argument, 0, 't' },
+		{ "in-rect",  required_argument, 0, 'i' },
+		{ "out-rect", required_argument, 0, 'r' },
+		{ "help",     no_argument,       0, 'h' },
+		{ 0 },
+	};
+
+	int c;
+	int option_ind;
+	while (1) {
+		c = getopt_long(argc, argv, "t:i:r:h", long_opts, &option_ind);
+
+		if (c == -1)
+			break;
+
+		switch (c) {
+		case 't':
+			conf->timelinefile = optarg;
+			break;
+
+		case 'i':
+			rect_parse(&conf->inrect, optarg);
+			break;
+
+		case 'r':
+			rect_parse(&conf->outrect, optarg);
+			break;
+
+		case 'h':
+			printf("Usage: %s [options] <outfile>\n", argv[0]);
+			exit(EXIT_SUCCESS);
+
+		case '?':
+			break;
+
+		default:
+			logln("hi %s", optarg);
+		}
+	}
+
+	if (argv[optind] == NULL) {
+		printf("Usage: %s [options] <outfile>\n", argv[0]);
+		exit(EXIT_FAILURE);
+	}
+
+	conf->outfile = argv[optind];
+	logln("Writing to %s.", conf->outfile);
+}
+
 int main(int argc, char **argv) {
 
 	// Create image source
 	struct imgsrc *imgsrc = imgsrc_create_x11();
 
 	// TODO: get this from argv
+	struct config conf;
 	conf.inrect.x = 0;
 	conf.inrect.y = 0;
 	conf.inrect.w = imgsrc->screensize.w;
 	conf.inrect.h = imgsrc->screensize.h;
-	conf.outrect.w = imgsrc->screensize.w / 2;
-	conf.outrect.h = imgsrc->screensize.h / 2;
-	conf.outfile = "output.h264";
-	conf.timelinefile = "timeline.log";
+	conf.outrect.w = imgsrc->screensize.w;
+	conf.outrect.h = imgsrc->screensize.h;
+	conf.outfile = NULL;
+	conf.timelinefile = NULL;
 	conf.fps = 30;
+
+	parse_args(argc, argv, &conf);
 
 	if (conf.timelinefile) {
 		FILE *f = fopen(conf.timelinefile, "w");
