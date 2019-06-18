@@ -16,6 +16,8 @@
 #include "pixconv.h"
 #include "venc.h"
 
+#define NUM_BUFFERS 4
+
 struct config {
 	struct rect inrect;
 	struct rect outrect;
@@ -292,7 +294,7 @@ int main(int argc, char **argv) {
 	imgsrc->init(imgsrc, conf.inrect);
 	struct capctx capctx = {
 		.imgsrc = imgsrc,
-		.outq = ringbuf_create(sizeof(void *), 2),
+		.outq = ringbuf_create(sizeof(void *), NUM_BUFFERS),
 		.fps = conf.fps,
 	};
 	pthread_t cap_th;
@@ -305,7 +307,7 @@ int main(int argc, char **argv) {
 	struct encctx encctx;
 	encctx.file = fopen(conf.outfile, "w");
 	if (encctx.file == NULL) ppanic("%s", conf.outfile);
-	encctx.inq = ringbuf_create(sizeof(AVFrame *), 2);
+	encctx.inq = ringbuf_create(sizeof(AVFrame *), NUM_BUFFERS);
 
 	struct encconf encconf = {
 		.id = AV_CODEC_ID_H264,
