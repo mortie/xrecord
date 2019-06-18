@@ -46,7 +46,6 @@ static void *cap_thread(void *arg) {
 	double acc = 0;
 	double prev = time_now();
 	double target = (double)1 / ctx->fps;
-	int drift = 0;
 
 	while (1) {
 		struct membuf **membuf = ringbuf_write_start(ctx->outq);
@@ -61,11 +60,9 @@ static void *cap_thread(void *arg) {
 		if (acc > 0) {
 			usleep(acc * 1000000ll);
 			acc -= time_now() - now;
-			drift = 0;
-		} else if (acc < 0) {
-			drift += 1;
-			if (drift % (int)ctx->fps == 0)
-				logln("Can't keep up! Accumulated %fs of drift.", -acc);
+		} else if (acc < -2) {
+			logln("Can't keep up! Skipping %.3fms.", -(acc * 1000.0));
+			acc = 0;
 		}
 		prev = time_now();
 	}
