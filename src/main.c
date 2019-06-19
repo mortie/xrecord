@@ -313,7 +313,7 @@ int main(int argc, char **argv) {
 		.height = conf.outrect.h,
 	};
 
-	if (find_encoder(&encctx.codec, &encctx.avctx, NULL, &encconf) < 0)
+	if (open_encoder(&encctx.codec, &encctx.avctx, NULL, &encconf) < 0)
 		panic("Failed to find video encoder.");
 
 	enum AVPixelFormat encfmt;

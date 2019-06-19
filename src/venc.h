@@ -10,7 +10,7 @@ struct encconf {
 	int height;
 };
 
-int find_encoder(
+int open_encoder(
 		const AVCodec **codec, AVCodecContext **ctx,
 		const char *name, struct encconf *conf);
 

@@ -1,6 +1,10 @@
 #include "venc.h"
 
 #include <libavutil/hwcontext.h>
+#include <fnmatch.h>
+#include <stdbool.h>
+
+#include "util.h"
 
 static void setconf(AVCodecContext *ctx, enum AVPixelFormat fmt, struct encconf *conf) {
 	ctx->time_base = (AVRational) { 1, conf->fps };
@@ -40,13 +44,49 @@ static int set_hwframe_ctx(
 	return ret;
 }
 
+static bool find_codec(const AVCodec **codec, enum AVCodecID id, char *pattern) {
+	void *iter = NULL;
+	while ((*codec = av_codec_iterate(&iter)) != NULL) {
+		if ((*codec)->id != id)
+			continue;
+
+		int match = fnmatch(pattern, (*codec)->name, 0);
+		if (match == FNM_NOMATCH) {
+			continue;
+		} else if (match == 0) {
+			return true;
+		} else {
+			logln("Invalid pattern: %s", pattern);
+			return false;
+		}
+
+	}
+
+	return false;
+}
+
+static int try_nvenc(
+		const AVCodec **codec, AVCodecContext **ctx,
+		struct encconf *conf) {
+
+	if (!find_codec(codec, conf->id, "nvenc_*")) {
+		logln("Found no nvenc codec.");
+		return -1;
+	}
+
+	*ctx = avcodec_alloc_context3(*codec);
+	setconf(*ctx, (*codec)->pix_fmts[0], conf);
+	return avcodec_open2(*ctx, *codec, NULL);
+}
+
 static int try_vaapi(
 		const AVCodec **codec, AVCodecContext **ctx,
 		struct encconf *conf) {
 
-	*codec = avcodec_find_encoder_by_name("h264_vaapi");
-	if (*codec == NULL)
+	if (!find_codec(codec, conf->id, "*_vaapi")) {
+		logln("Found no vaapi codec.");
 		return -1;
+	}
 
 	*ctx = avcodec_alloc_context3(*codec);
 	setconf(*ctx, AV_PIX_FMT_VAAPI, conf);
@@ -70,13 +110,15 @@ static int try_vaapi(
 	}
 
 	ret = avcodec_open2(*ctx, *codec, NULL);
-	if (ret < 0)
+	if (ret < 0) {
 		avcodec_free_context(ctx);
+		return -1;
+	}
 
 	return ret;
 }
 
-int find_encoder(
+int open_encoder(
 		const AVCodec **codec, AVCodecContext **ctx,
 		const char *name, struct encconf *conf) {
 
@@ -96,6 +138,11 @@ int find_encoder(
 
 		return ret;
 	}
+
+	// Try out nvenc
+	fprintf(stderr, "Trying out nvenc...\n");
+	if (try_nvenc(codec, ctx, conf) >= 0)
+		return 0;
 
 	// Try out vaapi
 	fprintf(stderr, "Trying out vaapi...\n");
