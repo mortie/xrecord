@@ -4,10 +4,12 @@
 #include <string.h>
 #include <X11/Xlib.h>
 #include <X11/extensions/XShm.h>
+#include <X11/extensions/Xfixes.h>
 #include <sys/shm.h>
 
 #include "rect.h"
 #include "util.h"
+#include "time.h"
 
 struct membuf_x11 {
 	struct membuf membuf;
@@ -71,6 +73,41 @@ static void get_frame_x11(struct imgsrc *src_, struct membuf *membuf_) {
 			src->display, src->root, membuf->image,
 			src->imgsrc.rect.x, src->imgsrc.rect.y, AllPlanes))
 		panic("XShmGetImage failed");
+
+	uint8_t *pix = (uint8_t *)membuf->image->data;
+
+	XFixesCursorImage *xcim = XFixesGetCursorImage(src->display);
+
+	// Inspired by paint_mouse_pointer from ffmpeg's x11grab.c
+	// https://github.com/lu-zero/ffmpeg/blob/master/libavdevice/x11grab.c
+	for (int x = 0; x < xcim->width; ++x) {
+		for (int y = 0; y < xcim->height; ++y) {
+			int ix = xcim->x - xcim->xhot + x;
+			int iy = xcim->y - xcim->yhot + y;
+			if (ix > src->imgsrc.rect.w || ix < 0) continue;
+			if (iy > src->imgsrc.rect.h || iy < 0) continue;
+
+			int xcidx = y * xcim->width + x;
+			int imgidx = iy * src->imgsrc.bpl + ix * 4;
+
+			int r = (uint8_t)(xcim->pixels[xcidx] >> 0);
+			int g = (uint8_t)(xcim->pixels[xcidx] >> 8);
+			int b = (uint8_t)(xcim->pixels[xcidx] >> 16);
+			int a = (uint8_t)(xcim->pixels[xcidx] >> 24);
+
+			if (a == 255) {
+				pix[imgidx + 0] = r;
+				pix[imgidx + 1] = g;
+				pix[imgidx + 2] = b;
+			} else if (a) {
+				pix[imgidx + 0] = r + (pix[imgidx + 0] * (255 - a) + (255 / 2)) / 255;
+				pix[imgidx + 1] = g + (pix[imgidx + 1] * (255 - a) + (255 / 2)) / 255;
+				pix[imgidx + 2] = b + (pix[imgidx + 2] * (255 - a) + (255 / 2)) / 255;
+			}
+		}
+	}
+
+	XFree(xcim);
 }
 
 struct imgsrc *imgsrc_create_x11() {

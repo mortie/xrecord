@@ -1,5 +1,5 @@
 PROJNAME = xrecord
-PKGS = x11 xext libavcodec libavutil OpenCL
+PKGS = x11 xext xfixes libavcodec libavutil OpenCL
 WARNINGS += -Wpedantic
 CCOPTS += -pthread
 LDOPTS += -pthread
