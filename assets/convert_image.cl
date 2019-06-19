@@ -12,7 +12,8 @@ kernel void convert_rgb32_nv12(
 	int inx = outx * scale_x + (scale_x - 1) / 2;
 	int iny = outy * scale_y + (scale_y - 1) / 2;
 
-	uint4 pix = read_imageui(input, sampler, (int2)(inx, iny));
+	uint4 pixvec = read_imageui(input, sampler, (int2)(inx, iny));
+	uint *pix = &pixvec;
 
 	float pix_r = (float)pix[in_r];
 	float pix_g = (float)pix[in_g];
@@ -39,7 +40,8 @@ kernel void convert_rgb32_yuv420(
 	int inx = outx * scale_x + (scale_x - 1) / 2;
 	int iny = outy * scale_y + (scale_y - 1) / 2;
 
-	uint4 pix = read_imageui(input, sampler, (int2)(inx, iny));
+	uint4 pixvec = read_imageui(input, sampler, (int2)(inx, iny));
+	uint *pix = &pixvec;
 
 	float pix_r = (float)pix[in_r];
 	float pix_g = (float)pix[in_g];
