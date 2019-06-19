@@ -97,14 +97,14 @@ static int try_vaapi(
 			&hw_device_ctx, AV_HWDEVICE_TYPE_VAAPI,
 			NULL, NULL, 0);
 	if (ret < 0) {
-		fprintf(stderr, "Failed to create a VAAPI device. Error code: %s\n", av_err2str(ret));
+		logln("Failed to create a VAAPI device. Error code: %s", av_err2str(ret));
 		avcodec_free_context(ctx);
 		return ret;
 	}
 
 	ret = set_hwframe_ctx(*ctx, hw_device_ctx, AV_PIX_FMT_NV12, conf);
 	if (ret < 0) {
-		fprintf(stderr, "Failed to set hwframe context.\n");
+		logln("Failed to set hwframe context.");
 		avcodec_free_context(ctx);
 		return ret;
 	}
@@ -154,5 +154,6 @@ int open_encoder(
 	*codec = avcodec_find_encoder(conf->id);
 	*ctx = avcodec_alloc_context3(*codec);
 	setconf(*ctx, (*codec)->pix_fmts[0], conf);
+
 	return avcodec_open2(*ctx, *codec, NULL);
 }
